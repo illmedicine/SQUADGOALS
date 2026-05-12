@@ -1,0 +1,19 @@
+node_modules
+dist
+dist-ssr
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+
+# Capacitor / Android
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
+android/app/release/
+android/app/debug/
+*.keystore
