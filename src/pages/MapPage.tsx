@@ -13,11 +13,14 @@ const GOOGLE_MAPS_KEY = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string) || 
 
 // Dark map styling so it matches the app theme.
 const mapStyles: google.maps.MapTypeStyle[] = [
-  { elementType: 'geometry', stylers: [{ color: '#1b1b35' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#a5a3c4' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#0b0b14' }] },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#2a2a4e' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0e1633' }] },
+  { elementType: 'geometry', stylers: [{ color: '#faf7ff' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#4a4670' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#ffffff' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#ffffff' }] },
+  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#ede1ff' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#d9f3ff' }] },
+  { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#fff5f8' }] },
+  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#e6f9ee' }] },
   { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'simplified' }] }
 ];
 
@@ -89,7 +92,7 @@ export default function MapPage() {
             <span>{presence.filter(p => p.uid !== user?.uid).length} squad nearby</span>
           </div>
         </div>
-        <button className="btn secondary" style={{ width: 'auto' }} onClick={() => setShare(s => !s)}>
+        <button className={'share-toggle ' + (share ? 'on' : '')} onClick={() => setShare(s => !s)}>
           {share ? '📍 Sharing' : '🚫 Hidden'}
         </button>
       </div>
@@ -180,6 +183,6 @@ function svgMarker(fill: string, label = ''): google.maps.Icon {
     anchor: new google.maps.Point(18, 46)
   };
 }
-function meIcon()    { return svgMarker('#7c3aed', '★'); }
-function squadIcon() { return svgMarker('#22d3ee', '●'); }
-function placeIcon() { return svgMarker('#f472b6', '☕'); }
+function meIcon()    { return svgMarker('#8b5cf6', '★'); }
+function squadIcon() { return svgMarker('#ec4899', '●'); }
+function placeIcon() { return svgMarker('#f59e0b', '☕'); }
