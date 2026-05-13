@@ -62,9 +62,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const unsub = onAuthStateChanged(auth, async (u) => {
       setRawUser(u);
       if (!u) { setUser(null); setLoading(false); return; }
-      const profile = await ensureProfile(u);
-      setUser(profile);
-      setLoading(false);
+      try {
+        const profile = await ensureProfile(u);
+        setUser(profile);
+      } catch (err: any) {
+        // Firestore unreachable (e.g. DB not created yet). Fall back to an
+        // in-memory profile so the app still loads.
+        console.warn('ensureProfile failed, using fallback:', err?.message);
+        setError(err?.message || null);
+        setUser({
+          uid: u.uid,
+          displayName: u.displayName || 'Friend',
+          email: u.email,
+          photoURL: u.photoURL,
+          avatar: defaultAvatar
+        });
+      } finally {
+        setLoading(false);
+      }
     });
     return () => unsub();
   }, []);
