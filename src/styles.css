@@ -172,15 +172,13 @@ label {
   text-align: center;
 }
 .login .logo-img {
-  width: 220px; height: 220px;
+  width: 240px;
+  height: 240px;
   object-fit: contain;
   background: transparent;
   margin-bottom: 8px;
-  filter:
-    drop-shadow(0 14px 28px rgba(139, 92, 246, 0.32))
-    drop-shadow(0 4px 8px rgba(236, 72, 153, 0.18));
-  /* Blend mode melts the white logo background into the pastel page bg
-     so it looks like the artwork is floating. */
+  /* Knock out the white PNG background by blending. No `filter` here —
+     `filter` creates a stacking context that disables mix-blend-mode. */
   mix-blend-mode: multiply;
   animation: float 6s ease-in-out infinite;
 }

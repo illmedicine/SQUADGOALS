@@ -2,7 +2,8 @@ import {
   createContext, useContext, useEffect, useMemo, useState, ReactNode
 } from 'react';
 import {
-  onAuthStateChanged, signInWithPopup, signInWithRedirect, signOut, User
+  onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectResult,
+  signOut, User, browserPopupRedirectResolver
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db, googleProvider, firebaseConfigured } from './firebase';
@@ -56,6 +57,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       return;
     }
+    // Pick up any pending redirect sign-in result first.
+    getRedirectResult(auth).catch(err => setError(err?.message || null));
     const unsub = onAuthStateChanged(auth, async (u) => {
       setRawUser(u);
       if (!u) { setUser(null); setLoading(false); return; }
@@ -88,10 +91,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function signIn() {
     setError(null);
     if (!auth) { setError('Firebase not configured — use Demo Mode.'); return; }
+    // GitHub Pages sets a Cross-Origin-Opener-Policy that breaks popup window
+    // tracking, so use the redirect flow on the deployed site and any non-
+    // localhost origin. Popup is kept for `localhost` because it's faster
+    // during local development.
+    const isLocal = /^localhost$|^127\./i.test(window.location.hostname);
     try {
-      await signInWithPopup(auth, googleProvider);
+      if (isLocal) {
+        await signInWithPopup(auth, googleProvider, browserPopupRedirectResolver);
+      } else {
+        await signInWithRedirect(auth, googleProvider);
+      }
     } catch (e: any) {
-      // Mobile webviews often need redirect flow.
       try { await signInWithRedirect(auth, googleProvider); }
       catch (err: any) { setError(err.message || 'Sign-in failed'); }
     }
