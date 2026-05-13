@@ -177,9 +177,7 @@ label {
   object-fit: contain;
   background: transparent;
   margin-bottom: 8px;
-  /* Knock out the white PNG background by blending. No `filter` here —
-     `filter` creates a stacking context that disables mix-blend-mode. */
-  mix-blend-mode: multiply;
+  filter: drop-shadow(0 12px 28px rgba(124, 58, 237, 0.25));
   animation: float 6s ease-in-out infinite;
 }
 @keyframes float {

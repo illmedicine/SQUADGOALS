@@ -11,7 +11,7 @@ export default defineConfig(({ command }) => ({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['logo.png', 'icon-192.svg', 'icon-512.svg', 'favicon.svg'],
+      includeAssets: ['logo.png', 'favicon.png', 'icon-192.png', 'icon-512.png', 'favicon.svg'],
       manifest: {
         name: 'Squad REN',
         short_name: 'SquadREN',
@@ -23,10 +23,9 @@ export default defineConfig(({ command }) => ({
         start_url: `/${REPO}/`,
         scope: `/${REPO}/`,
         icons: [
-          { src: 'logo.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-          { src: 'logo.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-          { src: 'icon-192.svg', sizes: '192x192', type: 'image/svg+xml', purpose: 'any' },
-          { src: 'icon-512.svg', sizes: '512x512', type: 'image/svg+xml', purpose: 'any' }
+          { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
         ]
       }
     })
