@@ -7,7 +7,10 @@ export default function ProfilePage() {
   if (!user) return null;
   return (
     <div className="page">
-      <h1>Profile</h1>
+      <div style={{ textAlign: 'center', marginBottom: 8 }}>
+        <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Squad REN" style={{ width: 72, height: 72, objectFit: 'contain' }} />
+      </div>
+      <h1 style={{ textAlign: 'center' }}>Profile</h1>
       <div className="card" style={{ textAlign: 'center' }}>
         <Avatar config={user.avatar || defaultAvatar} size={120} />
         <div style={{ marginTop: 8, fontWeight: 700, fontSize: 18 }}>{user.displayName}</div>

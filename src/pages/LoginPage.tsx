@@ -8,9 +8,9 @@ export default function LoginPage() {
 
   return (
     <div className="login">
-      <div className="logo">SR</div>
+      <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Squad REN" className="logo-img" />
       <h1>Squad REN</h1>
-      <p>Find your friends in any crowd. Earn badges for staying close.</p>
+      <p>by illy robotic instruments — Friend Finder</p>
 
       {firebaseConfigured ? (
         <button className="btn" onClick={signIn} style={{ maxWidth: 320 }}>

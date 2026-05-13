@@ -135,6 +135,11 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 8px 0 4px;
   display: grid; place-items: center; font-weight: 800; font-size: 32px;
   margin-bottom: 16px;
 }
+.login .logo-img {
+  width: 160px; height: 160px; object-fit: contain;
+  border-radius: 28px; margin-bottom: 12px;
+  filter: drop-shadow(0 10px 30px rgba(124,58,237,0.45));
+}
 .login h1 { font-size: 28px; margin: 0 0 4px; }
 .login p { color: var(--muted); margin: 0 0 24px; text-align: center; }
 
