@@ -11,6 +11,10 @@ export default defineConfig(({ command }) => ({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // While auth is being stabilized, keep the SW from caching old builds.
+      // Re-enable workbox precache later once everything is solid.
+      injectRegister: false,
+      selfDestroying: true,
       includeAssets: ['logo.png', 'favicon.png', 'icon-192.png', 'icon-512.png', 'favicon.svg'],
       manifest: {
         name: 'Squad REN',

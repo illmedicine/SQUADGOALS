@@ -37,6 +37,9 @@ export default function LoginPage() {
       <p className="footnote">
         Your location is only shared with squads you join — you control visibility per squad.
       </p>
+      <p className="footnote" style={{ opacity: 0.4, fontSize: 11 }}>
+        build {new Date().toISOString().slice(0,16)}
+      </p>
     </div>
   );
 }
