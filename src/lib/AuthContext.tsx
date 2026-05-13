@@ -57,8 +57,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       return;
     }
-    // Pick up any pending redirect sign-in result first.
-    getRedirectResult(auth).catch(err => setError(err?.message || null));
+    // Pick up any pending redirect sign-in result first. Log loudly so we can
+    // diagnose problems on the deployed site where DevTools is the only debug
+    // surface available.
+    console.log('[auth] checking for redirect result on boot…');
+    getRedirectResult(auth)
+      .then(res => {
+        if (res?.user) {
+          console.log('[auth] redirect sign-in succeeded:', res.user.email);
+        } else {
+          console.log('[auth] no pending redirect result');
+        }
+      })
+      .catch(err => {
+        console.error('[auth] getRedirectResult failed:', err);
+        setError(`Redirect sign-in failed: ${err?.code || ''} ${err?.message || err}`);
+      });
     const unsub = onAuthStateChanged(auth, async (u) => {
       setRawUser(u);
       if (!u) { setUser(null); setLoading(false); return; }
@@ -106,20 +120,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function signIn() {
     setError(null);
     if (!auth) { setError('Firebase not configured — use Demo Mode.'); return; }
-    // GitHub Pages sets a Cross-Origin-Opener-Policy that breaks popup window
-    // tracking, so use the redirect flow on the deployed site and any non-
-    // localhost origin. Popup is kept for `localhost` because it's faster
-    // during local development.
-    const isLocal = /^localhost$|^127\./i.test(window.location.hostname);
+    console.log('[auth] signIn() called. hostname=', window.location.hostname);
+    // Try popup first everywhere. Popup works on GitHub Pages despite the COOP
+    // header — the only side-effect is we can't detect manual popup close.
+    // Fall back to redirect if popup is blocked or throws.
     try {
-      if (isLocal) {
-        await signInWithPopup(auth, googleProvider, browserPopupRedirectResolver);
-      } else {
-        await signInWithRedirect(auth, googleProvider);
-      }
+      console.log('[auth] attempting signInWithPopup…');
+      const res = await signInWithPopup(auth, googleProvider, browserPopupRedirectResolver);
+      console.log('[auth] popup sign-in succeeded:', res.user.email);
     } catch (e: any) {
-      try { await signInWithRedirect(auth, googleProvider); }
-      catch (err: any) { setError(err.message || 'Sign-in failed'); }
+      console.warn('[auth] popup failed, falling back to redirect:', e?.code, e?.message);
+      if (e?.code === 'auth/popup-closed-by-user' || e?.code === 'auth/cancelled-popup-request') {
+        setError('Sign-in cancelled.');
+        return;
+      }
+      try {
+        await signInWithRedirect(auth, googleProvider);
+      } catch (err: any) {
+        console.error('[auth] redirect sign-in also failed:', err);
+        setError(`${err?.code || ''} ${err?.message || 'Sign-in failed'}`);
+      }
     }
   }
 
