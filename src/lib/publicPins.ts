@@ -9,6 +9,8 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 
+export type PinVisibility = 'public' | 'squad';
+
 export type PublicPin = {
   id: string;
   uid: string;
@@ -21,6 +23,10 @@ export type PublicPin = {
   lat: number;
   lng: number;
   createdAt: any;
+  // 'public' = visible worldwide; 'squad' = visible only to fellow squad members.
+  visibility: PinVisibility;
+  // Snapshot of the author's squads at post time — used to gate squad-only pins.
+  squadIds?: string[];
   // Aggregates updated client-side after each new comment/review.
   commentCount?: number;
   avgRating?: number;
@@ -46,10 +52,14 @@ function dget<T>(k: string, fb: T): T {
 function dset<T>(k: string, v: T) { localStorage.setItem('squadren.' + k, JSON.stringify(v)); }
 
 export async function createPublicPin(p: Omit<PublicPin, 'id' | 'createdAt' | 'commentCount' | 'avgRating' | 'reviewCount'>) {
+  // Default to public so legacy callers continue to behave the same way.
+  const visibility: PinVisibility = p.visibility || 'public';
+  const squadIds = p.squadIds || [];
   if (demo) {
     const list = dget<PublicPin[]>('publicPins', []);
     const next: PublicPin = {
-      ...p, id: 'pp-' + Date.now(),
+      ...p, visibility, squadIds,
+      id: 'pp-' + Date.now(),
       createdAt: Date.now(),
       commentCount: 0, avgRating: p.rating || 0, reviewCount: p.rating ? 1 : 0
     };
@@ -59,6 +69,8 @@ export async function createPublicPin(p: Omit<PublicPin, 'id' | 'createdAt' | 'c
   }
   const ref = await addDoc(collection(db!, 'publicPins'), {
     ...p,
+    visibility,
+    squadIds,
     createdAt: serverTimestamp(),
     commentCount: 0,
     avgRating: p.rating || 0,
@@ -67,16 +79,31 @@ export async function createPublicPin(p: Omit<PublicPin, 'id' | 'createdAt' | 'c
   return ref.id;
 }
 
-export function watchPublicPins(cb: (pins: PublicPin[]) => void, max = 500) {
+// Returns pins the current viewer is allowed to see: all public pins +
+// squad-only pins whose author shares at least one squad with the viewer
+// (or that the viewer themselves authored). Pass viewerUid='' to see only
+// world-public pins.
+export function watchPublicPins(
+  cb: (pins: PublicPin[]) => void,
+  opts: { viewerUid?: string; viewerSquadIds?: string[]; max?: number } = {}
+) {
+  const { viewerUid = '', viewerSquadIds = [], max = 500 } = opts;
+  const filter = (pins: PublicPin[]) => pins.filter(p => {
+    const vis = p.visibility || 'public';
+    if (vis === 'public') return true;
+    if (p.uid === viewerUid) return true;
+    const ids = p.squadIds || [];
+    return ids.some(s => viewerSquadIds.includes(s));
+  });
   if (demo) {
-    const tick = () => cb(dget<PublicPin[]>('publicPins', []));
+    const tick = () => cb(filter(dget<PublicPin[]>('publicPins', [])));
     tick();
     const id = setInterval(tick, 2000);
     return () => clearInterval(id);
   }
   const q = query(collection(db!, 'publicPins'), orderBy('createdAt', 'desc'), limit(max));
   return onSnapshot(q, snap => {
-    cb(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+    cb(filter(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))));
   });
 }
 

@@ -1,6 +1,6 @@
 import {
   collection, doc, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where,
-  addDoc, getDocs, arrayUnion, arrayRemove, writeBatch
+  addDoc, getDocs, arrayUnion, arrayRemove, writeBatch, limit
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { haversine, type LatLng } from './geo';
@@ -17,12 +17,16 @@ export type Squad = {
 export type Presence = {
   uid: string;
   displayName: string;
+  avatar?: any;
   lat: number;
   lng: number;
   updatedAt: any;
   placeName?: string | null;
   squadIds: string[];
   shareLocation: boolean;
+  // When true, this user is visible on the world-wide "Public" layer to
+  // every signed-in Squad REN user, not just their squads.
+  sharePublic?: boolean;
 };
 
 const demo = !db;
@@ -117,6 +121,24 @@ export function watchSquadPresence(squadIds: string[], cb: (p: Presence[]) => vo
   const q = query(collection(db!, 'presence'),
     where('shareLocation', '==', true),
     where('squadIds', 'array-contains-any', squadIds.slice(0, 30)));
+  return onSnapshot(q, snap => {
+    cb(snap.docs.map(d => d.data() as Presence));
+  });
+}
+
+// Returns every user who has opted in to *public* location sharing.
+// Used to render the "world" presence layer alongside squad-mates.
+export function watchPublicPresence(cb: (p: Presence[]) => void, max = 200) {
+  if (demo) {
+    const tick = () => {
+      const all = dget<Presence[]>('presence', []);
+      cb(all.filter(p => p.sharePublic).slice(0, max));
+    };
+    tick();
+    const id = setInterval(tick, 2000);
+    return () => clearInterval(id);
+  }
+  const q = query(collection(db!, 'presence'), where('sharePublic', '==', true), limit(max));
   return onSnapshot(q, snap => {
     cb(snap.docs.map(d => d.data() as Presence));
   });

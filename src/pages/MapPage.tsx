@@ -5,16 +5,17 @@ import {
 import { useAuth, defaultAvatar } from '../lib/AuthContext';
 import { useLocation } from '../lib/useLocation';
 import {
-  updatePresence, watchSquadPresence, watchUserSquads, watchVisitedPlaces,
+  updatePresence, watchSquadPresence, watchPublicPresence, watchUserSquads, watchVisitedPlaces,
   watchMyVisitedPlaces, maybeAutoLogVisit, parseGoogleTimeline, importTimelinePins,
   logVisitedPlace,
   type Presence, type Squad, type VisitedPlace
 } from '../lib/data';
 import { tickBadges } from '../lib/badges';
 import Avatar, { avatarToDataUrl } from '../components/Avatar';
+import TimelineTutorial from '../components/TimelineTutorial';
 import {
   createPublicPin, watchPublicPins, addComment, watchComments,
-  type PublicPin, type PinComment
+  type PublicPin, type PinComment, type PinVisibility
 } from '../lib/publicPins';
 import { awardXp, XP } from '../lib/prestige';
 
@@ -44,14 +45,17 @@ const CATEGORIES = ['Coffee', 'Food', 'Bar', 'Venue', 'Park', 'Shopping', 'Work'
 export default function MapPage() {
   const { user } = useAuth();
   const [share, setShare] = useState<boolean>(() => localStorage.getItem('squadren.share') !== 'false');
+  const [sharePublic, setSharePublic] = useState<boolean>(() => localStorage.getItem('squadren.sharePublic') === 'true');
   const [layer, setLayer] = useState<Layer>('public');
   const [heat, setHeat] = useState<boolean>(true);
   const [squads, setSquads] = useState<Squad[]>([]);
   const [presence, setPresence] = useState<Presence[]>([]);
+  const [publicPresence, setPublicPresence] = useState<Presence[]>([]);
   const [squadPlaces, setSquadPlaces] = useState<VisitedPlace[]>([]);
   const [myPlaces, setMyPlaces] = useState<VisitedPlace[]>([]);
   const [publicPins, setPublicPins] = useState<PublicPin[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
+  const [showTutorial, setShowTutorial] = useState<boolean>(() => localStorage.getItem('squadren.timelineTutorialSeen') !== 'true');
   // Two-step pin drop flow: user taps "+" to enter drop mode, then taps
   // anywhere on the map (or drags the preview marker) to pick a spot;
   // confirming opens the metadata modal. dropPos holds the chosen lat/lng.
@@ -70,6 +74,7 @@ export default function MapPage() {
   });
 
   useEffect(() => { localStorage.setItem('squadren.share', String(share)); }, [share]);
+  useEffect(() => { localStorage.setItem('squadren.sharePublic', String(sharePublic)); }, [sharePublic]);
 
   useEffect(() => {
     if (!user) return;
@@ -84,7 +89,9 @@ export default function MapPage() {
   }, [squadIds.join(',')]);
 
   useEffect(() => watchVisitedPlaces(setSquadPlaces), []);
-  useEffect(() => watchPublicPins(setPublicPins), []);
+  useEffect(() => watchPublicPins(setPublicPins, { viewerUid: user?.uid || '', viewerSquadIds: squadIds }),
+    [user?.uid, squadIds.join(',')]);
+  useEffect(() => watchPublicPresence(setPublicPresence), []);
   useEffect(() => {
     if (!user) return;
     return watchMyVisitedPlaces(user.uid, setMyPlaces);
@@ -94,13 +101,16 @@ export default function MapPage() {
     if (!user || !pos) return;
     updatePresence({
       uid: user.uid, displayName: user.displayName,
+      avatar: user.avatar || defaultAvatar,
       lat: pos.lat, lng: pos.lng,
-      placeName: null, squadIds, shareLocation: share
+      placeName: null, squadIds,
+      shareLocation: share,
+      sharePublic: share && sharePublic
     });
     const mates = presence.filter(p => p.uid !== user.uid).map(p => ({ lat: p.lat, lng: p.lng }));
     tickBadges(pos, mates);
     maybeAutoLogVisit(user.uid, user.displayName, pos, myPlaces).catch(() => {});
-  }, [pos?.lat, pos?.lng, share, squadIds.join(',')]);
+  }, [pos?.lat, pos?.lng, share, sharePublic, squadIds.join(',')]);
 
   const center = pos || { lat: 37.7749, lng: -122.4194 };
   const myAvatar = user?.avatar || defaultAvatar;
@@ -113,10 +123,11 @@ export default function MapPage() {
     if (!isLoaded || !heat) return [] as google.maps.LatLng[];
     const out: google.maps.LatLng[] = [];
     presence.forEach(p => p.shareLocation && out.push(new google.maps.LatLng(p.lat, p.lng)));
+    publicPresence.forEach(p => out.push(new google.maps.LatLng(p.lat, p.lng)));
     publicPins.forEach(p => out.push(new google.maps.LatLng(p.lat, p.lng)));
     squadPlaces.slice(0, 300).forEach(p => out.push(new google.maps.LatLng(p.lat, p.lng)));
     return out;
-  }, [isLoaded, heat, presence, publicPins, squadPlaces]);
+  }, [isLoaded, heat, presence, publicPresence, publicPins, squadPlaces]);
 
   async function onTimelineFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -158,7 +169,8 @@ export default function MapPage() {
           <div className="row">
             <span className="pill good">●</span>
             <span>{presence.filter(p => p.uid !== user?.uid).length} squad nearby</span>
-            <span className="pill">{publicPins.length} public pins</span>
+            <span className="pill">{Math.max(0, publicPresence.filter(p => p.uid !== user?.uid).length)} public</span>
+            <span className="pill">{publicPins.length} pins</span>
           </div>
           <div className="layer-toggle" style={{ marginTop: 8 }}>
             <button className={'chip ' + (layer === 'public' ? 'active' : '')} onClick={() => setLayer('public')}>🌎 Public</button>
@@ -166,6 +178,7 @@ export default function MapPage() {
             <button className={'chip ' + (layer === 'mine' ? 'active' : '')} onClick={() => setLayer('mine')}>📍 Mine</button>
             <button className={'chip ' + (heat ? 'active' : '')} onClick={() => setHeat(h => !h)}>🔥 Heat</button>
             <button className="chip" onClick={() => fileRef.current?.click()}>📥 Timeline</button>
+            <button className="chip" onClick={() => setShowTutorial(true)} title="How to import Google Timeline">❓ Help</button>
           </div>
           {importing && (
             <div style={{ fontSize: 12, marginTop: 6 }}>Importing… {importing.done}/{importing.total}</div>
@@ -175,9 +188,19 @@ export default function MapPage() {
           )}
           <input ref={fileRef} type="file" accept=".json,application/json" style={{ display: 'none' }} onChange={onTimelineFile} />
         </div>
-        <button className={'share-toggle ' + (share ? 'on' : '')} onClick={() => setShare(s => !s)}>
-          {share ? '📍 Sharing' : '🚫 Hidden'}
-        </button>
+        <div className="share-stack">
+          <button className={'share-toggle ' + (share ? 'on' : '')} onClick={() => setShare(s => !s)}>
+            {share ? '📍 Sharing' : '🚫 Hidden'}
+          </button>
+          <button
+            className={'share-toggle small ' + (sharePublic && share ? 'on' : '')}
+            onClick={() => setSharePublic(s => !s)}
+            disabled={!share}
+            title={share ? 'Be visible on the world map' : 'Turn on sharing first'}
+          >
+            {sharePublic && share ? '🌎 Public' : '👥 Squad only'}
+          </button>
+        </div>
       </div>
 
       {!GOOGLE_MAPS_KEY ? (
@@ -253,6 +276,22 @@ export default function MapPage() {
             </MarkerF>
           ))}
 
+          {/* Public layer also shows every user who opted in to public sharing,
+              even if they aren't in any of your squads. */}
+          {layer === 'public' && publicPresence.filter(p => p.uid !== user?.uid).map(p => (
+            <MarkerF key={'pub-' + p.uid} position={{ lat: p.lat, lng: p.lng }} title={p.displayName + ' (public)'}
+              icon={publicPersonIcon()} onClick={() => setSelected('pub-' + p.uid)}>
+              {selected === 'pub-' + p.uid && (
+                <InfoWindowF position={{ lat: p.lat, lng: p.lng }} onCloseClick={() => setSelected(null)}>
+                  <div style={{ color: '#111' }}>
+                    <strong>{p.displayName}</strong>
+                    <div style={{ fontSize: 11, color: '#666' }}>Sharing publicly 🌎</div>
+                  </div>
+                </InfoWindowF>
+              )}
+            </MarkerF>
+          ))}
+
           {layer === 'mine' && myPlaces.slice(0, 500).map((pl, i) => (
             <MarkerF key={`mine-${i}`} position={{ lat: pl.lat, lng: pl.lng }}
               title={pl.placeName} icon={placeIcon('#8b5cf6')} />
@@ -314,6 +353,7 @@ export default function MapPage() {
       {dropOpen && dropPos && user && (
         <DropPinModal
           pos={dropPos}
+          hasSquad={squadIds.length > 0}
           onClose={() => setDropOpen(false)}
           onSubmit={async (data) => {
             const id = await createPublicPin({
@@ -324,7 +364,9 @@ export default function MapPage() {
               category: data.category,
               comment: data.comment,
               rating: data.rating,
-              lat: dropPos.lat, lng: dropPos.lng
+              lat: dropPos.lat, lng: dropPos.lng,
+              visibility: data.visibility,
+              squadIds: data.visibility === 'squad' ? squadIds : []
             });
             // Also log a private check-in + XP — but only treat it as a
             // check-in if the pin is within ~150 m of the user's actual
@@ -350,6 +392,13 @@ export default function MapPage() {
           }}
         />
       )}
+
+      {showTutorial && (
+        <TimelineTutorial onClose={() => {
+          localStorage.setItem('squadren.timelineTutorialSeen', 'true');
+          setShowTutorial(false);
+        }} />
+      )}
     </div>
   );
 }
@@ -367,6 +416,7 @@ function svgMarker(fill: string, label = ''): google.maps.Icon {
   };
 }
 function squadIcon() { return svgMarker('#ec4899', '●'); }
+function publicPersonIcon() { return svgMarker('#0ea5e9', '🌎'); }
 function placeIcon(c: string) { return svgMarker(c, '★'); }
 function dropPreviewIcon(): google.maps.Icon {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="52" height="64" viewBox="0 0 52 64">
@@ -442,6 +492,13 @@ function PublicPinDetail({ pin }: { pin: PublicPin }) {
           <div style={{ fontWeight: 700 }}>{pin.placeName}</div>
           <div style={{ fontSize: 11, color: '#666' }}>
             {pin.category} · by {pin.displayName}
+            {' · '}
+            <span style={{
+              fontWeight: 700,
+              color: (pin.visibility || 'public') === 'public' ? '#0ea5e9' : '#7c3aed'
+            }}>
+              {(pin.visibility || 'public') === 'public' ? '🌎 Public' : '👥 Squad'}
+            </span>
           </div>
         </div>
       </div>
@@ -501,10 +558,11 @@ function StarPicker({ value, onChange }: { value: number; onChange: (v: number) 
   );
 }
 
-type DropData = { placeName: string; category: string; comment: string; rating: number };
+type DropData = { placeName: string; category: string; comment: string; rating: number; visibility: PinVisibility };
 
-function DropPinModal({ pos, onClose, onSubmit }: {
+function DropPinModal({ pos, hasSquad, onClose, onSubmit }: {
   pos: { lat: number; lng: number };
+  hasSquad: boolean;
   onClose: () => void;
   onSubmit: (d: DropData) => Promise<void>;
 }) {
@@ -512,22 +570,37 @@ function DropPinModal({ pos, onClose, onSubmit }: {
   const [category, setCategory] = useState('Coffee');
   const [comment, setComment] = useState('');
   const [rating, setRating] = useState(0);
+  const [visibility, setVisibility] = useState<PinVisibility>('public');
   const [busy, setBusy] = useState(false);
 
   async function go() {
     if (!placeName.trim()) return;
     setBusy(true);
-    try { await onSubmit({ placeName: placeName.trim(), category, comment: comment.trim(), rating }); }
+    try { await onSubmit({ placeName: placeName.trim(), category, comment: comment.trim(), rating, visibility }); }
     finally { setBusy(false); }
   }
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
-        <h2 style={{ marginTop: 0 }}>📍 Drop a public pin</h2>
+        <h2 style={{ marginTop: 0 }}>📍 Drop a pin</h2>
         <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 0 }}>
-          Anyone in the world using Squad REN will see this pin and can comment on it.
+          {visibility === 'public'
+            ? 'Anyone in the world using Squad REN will see this pin and can comment on it.'
+            : 'Only your squad members will be able to see this pin and its comments.'}
         </p>
+
+        <label>Visibility</label>
+        <div className="layer-toggle" style={{ marginBottom: 8 }}>
+          <button type="button" className={'chip ' + (visibility === 'public' ? 'active' : '')}
+            onClick={() => setVisibility('public')}>🌎 Public</button>
+          <button type="button" className={'chip ' + (visibility === 'squad' ? 'active' : '')}
+            onClick={() => setVisibility('squad')} disabled={!hasSquad}
+            title={hasSquad ? 'Visible only to your squad members' : 'Join a squad first'}>
+            👥 Squad only{!hasSquad && ' 🔒'}
+          </button>
+        </div>
+
         <label>Place name</label>
         <input className="input" value={placeName} onChange={e => setPlaceName(e.target.value)} placeholder="e.g. Joe's Coffee" />
         <label>Category</label>
@@ -544,7 +617,7 @@ function DropPinModal({ pos, onClose, onSubmit }: {
         <div className="row" style={{ gap: 8, marginTop: 12 }}>
           <button className="btn secondary" onClick={onClose} style={{ flex: 1 }}>Cancel</button>
           <button className="btn" onClick={go} disabled={busy || !placeName.trim()} style={{ flex: 2 }}>
-            {busy ? 'Posting…' : 'Drop pin'}
+            {busy ? 'Posting…' : (visibility === 'public' ? 'Drop public pin' : 'Drop squad pin')}
           </button>
         </div>
       </div>
