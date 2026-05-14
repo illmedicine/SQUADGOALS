@@ -11,10 +11,12 @@ export type DemoSquad = ReturnType<typeof demoSquads>[number];
 export type Squad = {
   id: string;
   name: string;
-  ownerId: string;
-  members: string[];          // uids
+  ownerId: string;            // squad leader (creator). Has admin powers.
+  members: string[];          // approved uids (includes leader)
+  pendingMembers?: string[];  // uids awaiting leader approval
   visibility: 'public' | 'private';
   logo?: string;              // SQUAD_LOGOS id, defaults to 'star'
+  hq?: { lat: number; lng: number; placeName?: string }; // squad meeting grounds / HQ pin
   createdAt?: any;
 };
 
@@ -66,6 +68,79 @@ export async function updateSquadLogo(squadId: string, logo: string) {
   await updateDoc(doc(db!, 'squads', squadId), { logo });
 }
 
+// Pin or move the squad's headquarters / meeting grounds. Only the leader
+// (ownerId) should call this from the UI; we don't enforce server-side
+// because the prototype runs without strict security rules.
+export async function updateSquadHq(squadId: string, hq: { lat: number; lng: number; placeName?: string }) {
+  if (demo) {
+    const list = dget<Squad[]>('squads', []);
+    const sq = list.find(s => s.id === squadId);
+    if (sq) sq.hq = hq;
+    dset('squads', list);
+    return;
+  }
+  await updateDoc(doc(db!, 'squads', squadId), { hq });
+}
+
+// User taps a public squad's HQ on the map and asks to join. For public
+// squads this enqueues the uid into `pendingMembers` until the leader
+// approves or denies. (For backwards compatibility, callers that want the
+// old "instant join" behaviour can still call `joinSquad` directly.)
+export async function requestJoinSquad(squadId: string, uid: string) {
+  if (demo) {
+    const list = dget<Squad[]>('squads', []);
+    const sq = list.find(s => s.id === squadId);
+    if (!sq) return;
+    if (sq.members.includes(uid)) return;
+    sq.pendingMembers = sq.pendingMembers || [];
+    if (!sq.pendingMembers.includes(uid)) sq.pendingMembers.push(uid);
+    dset('squads', list);
+    return;
+  }
+  await updateDoc(doc(db!, 'squads', squadId), { pendingMembers: arrayUnion(uid) });
+}
+
+export async function approveJoinRequest(squadId: string, uid: string) {
+  if (demo) {
+    const list = dget<Squad[]>('squads', []);
+    const sq = list.find(s => s.id === squadId);
+    if (!sq) return;
+    sq.pendingMembers = (sq.pendingMembers || []).filter(u => u !== uid);
+    if (!sq.members.includes(uid)) sq.members.push(uid);
+    dset('squads', list);
+    return;
+  }
+  await updateDoc(doc(db!, 'squads', squadId), {
+    pendingMembers: arrayRemove(uid),
+    members: arrayUnion(uid)
+  });
+}
+
+export async function denyJoinRequest(squadId: string, uid: string) {
+  if (demo) {
+    const list = dget<Squad[]>('squads', []);
+    const sq = list.find(s => s.id === squadId);
+    if (!sq) return;
+    sq.pendingMembers = (sq.pendingMembers || []).filter(u => u !== uid);
+    dset('squads', list);
+    return;
+  }
+  await updateDoc(doc(db!, 'squads', squadId), { pendingMembers: arrayRemove(uid) });
+}
+
+// Leader removes a member (cannot remove themselves; use leaveSquad +
+// transfer ownership for that path which is out of scope here).
+export async function removeSquadMember(squadId: string, uid: string) {
+  if (demo) {
+    const list = dget<Squad[]>('squads', []);
+    const sq = list.find(s => s.id === squadId);
+    if (sq) sq.members = sq.members.filter(m => m !== uid);
+    dset('squads', list);
+    return;
+  }
+  await updateDoc(doc(db!, 'squads', squadId), { members: arrayRemove(uid) });
+}
+
 export async function joinSquad(squadId: string, uid: string) {
   if (demo) {
     const list = dget<Squad[]>('squads', []);
@@ -106,6 +181,20 @@ export async function listPublicSquads(): Promise<Squad[]> {
   const q = query(collection(db!, 'squads'), where('visibility', '==', 'public'));
   const snap = await getDocs(q);
   return snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as Squad[];
+}
+
+// Live stream of public squads — used by the map to render HQ pins.
+export function watchPublicSquadsLive(cb: (squads: Squad[]) => void) {
+  if (demo) {
+    const tick = () => cb(dget<Squad[]>('squads', []).filter(s => s.visibility === 'public'));
+    tick();
+    const id = setInterval(tick, 2000);
+    return () => clearInterval(id);
+  }
+  const q = query(collection(db!, 'squads'), where('visibility', '==', 'public'));
+  return onSnapshot(q, snap => {
+    cb(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as Squad[]);
+  });
 }
 
 // ---------- Presence ----------

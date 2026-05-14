@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   GoogleMap, useJsApiLoader, MarkerF, InfoWindowF, CircleF, HeatmapLayerF
 } from '@react-google-maps/api';
@@ -7,7 +8,7 @@ import { useLocation } from '../lib/useLocation';
 import {
   updatePresence, watchSquadPresence, watchPublicPresence, watchUserSquads, watchVisitedPlaces,
   watchMyVisitedPlaces, maybeAutoLogVisit, parseGoogleTimeline, importTimelinePins,
-  logVisitedPlace, listDemoSquads,
+  logVisitedPlace, listDemoSquads, watchPublicSquadsLive, updateSquadHq, requestJoinSquad,
   type Presence, type Squad, type VisitedPlace, type DemoSquad
 } from '../lib/data';
 import { tickBadges } from '../lib/badges';
@@ -20,6 +21,7 @@ import {
 import { awardXp, XP } from '../lib/prestige';
 import { TIERS } from '../lib/prestige';
 import { squadPrestige } from '../lib/demoSeed';
+import { getLogo, DEFAULT_LOGO_ID } from '../lib/squadLogos';
 
 const containerStyle: React.CSSProperties = { width: '100%', height: '100%' };
 const GOOGLE_MAPS_KEY = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string) || '';
@@ -69,6 +71,12 @@ export default function MapPage() {
   const [squadPlaces, setSquadPlaces] = useState<VisitedPlace[]>([]);
   const [myPlaces, setMyPlaces] = useState<VisitedPlace[]>([]);
   const [publicPins, setPublicPins] = useState<PublicPin[]>([]);
+  // Real (non-demo) public squads with an HQ pinned on the map.
+  const [publicSquads, setPublicSquads] = useState<Squad[]>([]);
+  // HQ-drop mode: leader is placing their squad headquarters on the map.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const setHqId = searchParams.get('setHq');
+  const [hqDropPos, setHqDropPos] = useState<{ lat: number; lng: number } | null>(null);
   // The 500 demo squads ship with the app; computed once.
   const demoSquadList = useMemo<DemoSquad[]>(() => listDemoSquads(), []);
   const [selected, setSelected] = useState<string | null>(null);
@@ -114,6 +122,7 @@ export default function MapPage() {
   useEffect(() => watchPublicPins(setPublicPins, { viewerUid: user?.uid || '', viewerSquadIds: squadIds }),
     [user?.uid, squadIds.join(',')]);
   useEffect(() => watchPublicPresence(setPublicPresence), []);
+  useEffect(() => watchPublicSquadsLive(setPublicSquads), []);
   useEffect(() => {
     if (!user) return;
     return watchMyVisitedPlaces(user.uid, setMyPlaces);
@@ -280,7 +289,7 @@ export default function MapPage() {
           options={{
             styles: mapStyles, disableDefaultUI: true, zoomControl: true,
             clickableIcons: false, gestureHandling: 'greedy',
-            draggableCursor: dropMode ? 'crosshair' : undefined
+            draggableCursor: (dropMode || setHqId) ? 'crosshair' : undefined
           }}
           onLoad={m => {
             mapRef.current = m;
@@ -302,8 +311,14 @@ export default function MapPage() {
             const z = m.getZoom(); if (typeof z === 'number') setZoom(z);
           }}
           onClick={e => {
-            if (!dropMode || !e.latLng) return;
-            setDropPos({ lat: e.latLng.lat(), lng: e.latLng.lng() });
+            if (!e.latLng) return;
+            if (setHqId) {
+              setHqDropPos({ lat: e.latLng.lat(), lng: e.latLng.lng() });
+              return;
+            }
+            if (dropMode) {
+              setDropPos({ lat: e.latLng.lat(), lng: e.latLng.lng() });
+            }
           }}
         >
           {heat && heatPoints.length > 0 && (
@@ -412,16 +427,63 @@ export default function MapPage() {
               zIndex={9999}
             />
           )}
+
+          {/* Real public squad HQ pins (organic squads created by users). */}
+          {layer === 'public' && publicSquads.filter(s => s.hq).map(s => {
+            const logo = getLogo(s.logo || DEFAULT_LOGO_ID);
+            return (
+              <MarkerF key={'hq-' + s.id} position={{ lat: s.hq!.lat, lng: s.hq!.lng }} title={s.name + ' HQ'}
+                icon={hqIcon(logo.glyph, logo.bg)}
+                onClick={() => setSelected('hq:' + s.id)}>
+                {selected === 'hq:' + s.id && (
+                  <InfoWindowF position={{ lat: s.hq!.lat, lng: s.hq!.lng }} onCloseClick={() => setSelected(null)}>
+                    <SquadHqDetail
+                      squad={s}
+                      isMember={!!user && s.members.includes(user.uid)}
+                      isLeader={!!user && s.ownerId === user.uid}
+                      isPending={!!user && (s.pendingMembers || []).includes(user.uid)}
+                      onRequestJoin={() => user && requestJoinSquad(s.id, user.uid)}
+                      onClose={() => setSelected(null)}
+                    />
+                  </InfoWindowF>
+                )}
+              </MarkerF>
+            );
+          })}
+
+          {/* HQ-drop preview marker (leader is placing their squad HQ). */}
+          {setHqId && hqDropPos && (
+            <MarkerF position={hqDropPos} draggable
+              onDragEnd={e => e.latLng && setHqDropPos({ lat: e.latLng.lat(), lng: e.latLng.lng() })}
+              icon={dropPreviewIcon()}
+              zIndex={9999}
+            />
+          )}
         </GoogleMap>
       )}
 
       {/* Drop-mode banner appears while user is choosing a spot. */}
-      {dropMode && (
+      {dropMode && !setHqId && (
         <div className="drop-banner">
           <span>📍 Tap anywhere on the map to place your pin{dropPos ? ' (or drag the marker)' : ''}.</span>
           <button className="chip" onClick={() => { setDropMode(false); setDropPos(null); }}>Cancel</button>
           {dropPos && (
             <button className="chip active" onClick={() => setDropOpen(true)}>Continue →</button>
+          )}
+        </div>
+      )}
+
+      {/* HQ-drop banner appears when leader navigates here from Squads page. */}
+      {setHqId && (
+        <div className="drop-banner">
+          <span>🏠 Tap the map to set your squad’s HQ{hqDropPos ? ' (or drag the marker)' : ''}.</span>
+          <button className="chip" onClick={() => { setHqDropPos(null); setSearchParams({}); }}>Cancel</button>
+          {hqDropPos && (
+            <button className="chip active" onClick={async () => {
+              await updateSquadHq(setHqId, hqDropPos);
+              setHqDropPos(null);
+              setSearchParams({});
+            }}>Save HQ ✓</button>
           )}
         </div>
       )}
@@ -557,6 +619,88 @@ function publicIcon(category: string) {
   };
   const [color, emoji] = map[category] || map.Other;
   return svgMarker(color, emoji);
+}
+
+// HQ marker — a flag/house shape colored by the squad's chosen crest,
+// with the crest glyph rendered inside. Bigger than a regular pin so the
+// "meeting grounds" of organic squads stand out on the map.
+function hqIcon(glyph: string, bg: string): google.maps.Icon {
+  const safe = glyph.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="72" viewBox="0 0 60 72">
+    <defs><filter id="hq" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="3" stdDeviation="2.5" flood-color="#000" flood-opacity="0.4"/></filter></defs>
+    <g filter="url(#hq)">
+      <path d="M30 0 L56 12 L56 36 C56 54 30 70 30 70 C30 70 4 54 4 36 L4 12 Z"
+            fill="${bg}" stroke="#fff" stroke-width="3"/>
+      <circle cx="30" cy="28" r="16" fill="#fff"/>
+      <text x="30" y="35" text-anchor="middle" font-size="22" font-family="system-ui">${safe}</text>
+      <rect x="22" y="48" width="16" height="4" rx="1.5" fill="#fff" opacity="0.95"/>
+      <text x="30" y="64" text-anchor="middle" font-size="8" font-family="system-ui" font-weight="800" fill="#fff">HQ</text>
+    </g>
+  </svg>`;
+  return {
+    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    scaledSize: new google.maps.Size(50, 60),
+    anchor: new google.maps.Point(25, 60)
+  };
+}
+
+function SquadHqDetail({ squad, isMember, isLeader, isPending, onRequestJoin, onClose }: {
+  squad: Squad;
+  isMember: boolean;
+  isLeader: boolean;
+  isPending: boolean;
+  onRequestJoin: () => void;
+  onClose: () => void;
+}) {
+  const logo = getLogo(squad.logo || DEFAULT_LOGO_ID);
+  const [requested, setRequested] = useState(isPending);
+  return (
+    <div style={{ color: '#111', minWidth: 240, maxWidth: 280, position: 'relative', paddingRight: 22 }}>
+      <button onClick={onClose} aria-label="Close"
+        style={{
+          position: 'absolute', top: -4, right: -4,
+          width: 28, height: 28, borderRadius: 999,
+          background: '#111', color: '#fff', border: 'none',
+          cursor: 'pointer', fontSize: 16, lineHeight: 1, zIndex: 10
+        }}>×</button>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        <div style={{
+          width: 44, height: 44, borderRadius: 12,
+          background: logo.bg, color: '#fff',
+          display: 'grid', placeItems: 'center', fontSize: 24, flex: '0 0 44px'
+        }}>{logo.glyph}</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 800, fontSize: 15 }}>{squad.name}</div>
+          <div style={{ fontSize: 11, color: '#666' }}>
+            🏠 Squad HQ · {squad.members.length} member{squad.members.length === 1 ? '' : 's'}
+            {squad.visibility === 'public' ? ' · 🌎 Public' : ' · 🔒 Private'}
+          </div>
+        </div>
+      </div>
+      <div style={{ marginTop: 10, fontSize: 12, color: '#444' }}>
+        Squad meeting grounds — tap below to ask the leader if you can join.
+      </div>
+      <div style={{ marginTop: 10 }}>
+        {isLeader ? (
+          <div style={{ fontSize: 12, color: '#a16207', fontWeight: 600 }}>👑 You are the leader of this squad.</div>
+        ) : isMember ? (
+          <div style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>✓ You're a member of this squad.</div>
+        ) : requested ? (
+          <div style={{ fontSize: 12, color: '#7c3aed', fontWeight: 600 }}>⏳ Request sent — waiting for the leader.</div>
+        ) : (
+          <button
+            onClick={() => { onRequestJoin(); setRequested(true); }}
+            style={{
+              width: '100%', padding: '8px 12px', border: 'none', borderRadius: 10,
+              background: 'linear-gradient(135deg,#8b5cf6,#ec4899)', color: '#fff',
+              fontWeight: 700, cursor: 'pointer'
+            }}>
+            Request to join
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function PublicPinDetail({ pin, onClose }: { pin: PublicPin; onClose: () => void }) {

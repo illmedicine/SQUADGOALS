@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/AuthContext';
 import {
-  createSquad, joinSquad, leaveSquad, listPublicSquads, watchUserSquads,
-  updateSquadLogo, type Squad
+  createSquad, leaveSquad, watchPublicSquadsLive, watchUserSquads,
+  updateSquadLogo, updateSquadHq,
+  requestJoinSquad, approveJoinRequest, denyJoinRequest, removeSquadMember,
+  type Squad
 } from '../lib/data';
 import {
   SQUAD_LOGOS, DEFAULT_LOGO_ID, getLogo, type SquadLogo
@@ -37,56 +40,35 @@ function LogoPicker({ value, onChange, tier, onClose }: {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <h2 style={{ margin: 0 }}>Choose squad crest</h2>
           <button onClick={onClose} aria-label="Close"
-            style={{
-              background: '#eee', border: 'none', borderRadius: 999,
-              width: 32, height: 32, cursor: 'pointer', fontSize: 18, lineHeight: 1
-            }}>×</button>
+            style={{ background: '#eee', border: 'none', borderRadius: 999, width: 32, height: 32, cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
         </div>
         <p style={{ color: 'var(--muted)', fontSize: 12, marginTop: 6 }}>
           Your squad is currently <strong>Tier {tier}</strong> ({TIERS[tier]?.name || '—'}).
           Rank up to unlock more crests.
         </p>
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(4, 1fr)',
-          gap: 10, marginTop: 12
-        }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginTop: 12 }}>
           {SQUAD_LOGOS.map((l: SquadLogo) => {
             const locked = l.tier > tier;
             const active = value === l.id;
             return (
-              <button
-                key={l.id}
-                type="button"
-                disabled={locked}
+              <button key={l.id} type="button" disabled={locked}
                 onClick={() => { if (!locked) onChange(l.id); }}
                 title={locked ? `Unlocks at Tier ${l.tier} (${TIERS[l.tier]?.name})` : l.name}
                 style={{
                   background: active ? l.bg : (locked ? '#f3f4f6' : '#fff'),
                   border: active ? '2px solid #111' : '1px solid #ddd',
-                  borderRadius: 12,
-                  padding: '10px 6px',
+                  borderRadius: 12, padding: '10px 6px',
                   cursor: locked ? 'not-allowed' : 'pointer',
                   opacity: locked ? 0.55 : 1,
                   display: 'flex', flexDirection: 'column',
-                  alignItems: 'center', gap: 4,
-                  position: 'relative'
-                }}
-              >
-                <div style={{
-                  width: 40, height: 40, borderRadius: 10,
-                  background: l.bg, display: 'grid', placeItems: 'center',
-                  fontSize: 22, filter: locked ? 'grayscale(0.7)' : 'none'
-                }}>{l.glyph}</div>
-                <div style={{ fontSize: 10, fontWeight: 600, color: active ? '#fff' : '#111' }}>
-                  {l.name}
-                </div>
+                  alignItems: 'center', gap: 4, position: 'relative'
+                }}>
+                <div style={{ width: 40, height: 40, borderRadius: 10, background: l.bg, display: 'grid', placeItems: 'center', fontSize: 22, filter: locked ? 'grayscale(0.7)' : 'none' }}>{l.glyph}</div>
+                <div style={{ fontSize: 10, fontWeight: 600, color: active ? '#fff' : '#111' }}>{l.name}</div>
                 {locked && (
-                  <div style={{
-                    position: 'absolute', top: 4, right: 4,
-                    fontSize: 10, background: '#111', color: '#fff',
-                    borderRadius: 6, padding: '1px 5px'
-                  }}>T{l.tier} 🔒</div>
+                  <div style={{ position: 'absolute', top: 4, right: 4, fontSize: 10, background: '#111', color: '#fff', borderRadius: 6, padding: '1px 5px' }}>
+                    T{l.tier} 🔒
+                  </div>
                 )}
               </button>
             );
@@ -100,41 +82,57 @@ function LogoPicker({ value, onChange, tier, onClose }: {
   );
 }
 
+function shortUid(uid: string) {
+  return uid.length > 10 ? uid.slice(0, 6) + '…' + uid.slice(-3) : uid;
+}
+
 export default function SquadsPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [mine, setMine] = useState<Squad[]>([]);
   const [pub, setPub] = useState<Squad[]>([]);
   const [name, setName] = useState('');
   const [visibility, setVisibility] = useState<'public' | 'private'>('private');
   const [newLogo, setNewLogo] = useState<string>(DEFAULT_LOGO_ID);
-  const [pickerFor, setPickerFor] = useState<string | null>(null); // squad id OR 'new'
+  const [pickerFor, setPickerFor] = useState<string | null>(null);
 
-  // Personal stats drive how many crests are unlocked for *this* user when
-  // they create a new squad (in lieu of a per-squad XP store).
   const myStats = user ? loadLocalStats() : { xp: 0 } as any;
   const myTier = tierForXp(myStats.xp || 0).tier;
 
   useEffect(() => {
     if (!user) return;
-    const unsub = watchUserSquads(user.uid, setMine);
-    listPublicSquads().then(setPub);
-    return unsub;
+    const unsubMine = watchUserSquads(user.uid, setMine);
+    const unsubPub = watchPublicSquadsLive(setPub);
+    return () => { unsubMine && unsubMine(); unsubPub && unsubPub(); };
   }, [user?.uid]);
 
   async function onCreate() {
     if (!user || !name.trim()) return;
     await createSquad({
       name: name.trim(), ownerId: user.uid, members: [user.uid],
-      visibility, logo: newLogo
+      visibility, logo: newLogo, pendingMembers: []
     });
     setName('');
     setNewLogo(DEFAULT_LOGO_ID);
-    listPublicSquads().then(setPub);
   }
 
   async function setLogoFor(squadId: string, logo: string) {
     await updateSquadLogo(squadId, logo);
-    setMine(prev => prev.map(s => s.id === squadId ? { ...s, logo } : s));
+  }
+
+  function pinHqOnMap(squadId: string) {
+    // Hand off to the map page, which reads ?setHq=<id> on mount and enters
+    // HQ-drop mode (banner + tap-to-place flow).
+    navigate('/?setHq=' + encodeURIComponent(squadId));
+  }
+
+  async function pinHqHere(squadId: string) {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      p => updateSquadHq(squadId, { lat: p.coords.latitude, lng: p.coords.longitude }),
+      err => alert('Could not get your location: ' + err.message),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
   }
 
   if (!user) return null;
@@ -152,9 +150,7 @@ export default function SquadsPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
           <SquadCrest logoId={newLogo} size={44} />
           <button type="button" className="btn ghost" style={{ width: 'auto' }}
-            onClick={() => setPickerFor('new')}>
-            Pick crest…
-          </button>
+            onClick={() => setPickerFor('new')}>Pick crest…</button>
           <div style={{ fontSize: 11, color: 'var(--muted)' }}>
             {SQUAD_LOGOS.filter(l => l.tier <= myTier).length} of {SQUAD_LOGOS.length} unlocked
           </div>
@@ -162,48 +158,115 @@ export default function SquadsPage() {
 
         <label>Visibility</label>
         <select className="select" value={visibility} onChange={e => setVisibility(e.target.value as any)}>
-          <option value="private">Private — only invited members see locations</option>
-          <option value="public">Public — anyone can join &amp; see locations</option>
+          <option value="private">Private — invite only</option>
+          <option value="public">Public — discoverable, join via request</option>
         </select>
-        <div style={{ height: 12 }} />
+        <div style={{ height: 8 }} />
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
+          You become the squad <strong>leader</strong> and can approve/deny members and pin the HQ on the map.
+        </div>
         <button className="btn" onClick={onCreate} disabled={!name.trim()}>Create</button>
       </div>
 
       <h2>Your Squads</h2>
       {mine.length === 0 && <div className="empty">No squads yet. Create one above.</div>}
       <div className="list">
-        {mine.map(s => (
-          <div key={s.id} className="list-item">
-            <SquadCrest logoId={s.logo} size={40} />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600 }}>{s.name}</div>
-              <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                {s.members.length} members · <span className={'pill ' + (s.visibility === 'public' ? '' : 'warn')}>{s.visibility}</span>
+        {mine.map(s => {
+          const isLeader = s.ownerId === user.uid;
+          const pending = s.pendingMembers || [];
+          return (
+            <div key={s.id} className="list-item" style={{ alignItems: 'flex-start', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%' }}>
+                <SquadCrest logoId={s.logo} size={40} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600 }}>
+                    {s.name} {isLeader && <span className="pill" style={{ marginLeft: 6 }}>👑 Leader</span>}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                    {s.members.length} members · <span className={'pill ' + (s.visibility === 'public' ? '' : 'warn')}>{s.visibility}</span>
+                    {s.hq && <span style={{ marginLeft: 6 }}>📍 HQ pinned</span>}
+                  </div>
+                </div>
+                {isLeader && (
+                  <button className="btn ghost" style={{ width: 'auto' }}
+                    onClick={() => setPickerFor(s.id)}>Crest</button>
+                )}
+                <button className="btn ghost" onClick={() => leaveSquad(s.id, user.uid)}>Leave</button>
               </div>
-              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>ID: {s.id}</div>
+
+              {isLeader && (
+                <div style={{ width: '100%' }}>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                    <button className="btn secondary" style={{ width: 'auto' }}
+                      onClick={() => pinHqOnMap(s.id)}>
+                      📍 {s.hq ? 'Move HQ on map' : 'Pin HQ on map'}
+                    </button>
+                    <button className="btn ghost" style={{ width: 'auto' }}
+                      onClick={() => pinHqHere(s.id)}>Use my location</button>
+                  </div>
+
+                  {pending.length > 0 && (
+                    <div style={{ marginTop: 10, background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 10, padding: 8 }}>
+                      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>
+                        ⏳ {pending.length} join request{pending.length === 1 ? '' : 's'}
+                      </div>
+                      {pending.map(uid => (
+                        <div key={uid} style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '4px 0' }}>
+                          <div style={{ flex: 1, fontSize: 12 }}>{shortUid(uid)}</div>
+                          <button className="btn secondary" style={{ width: 'auto', padding: '4px 10px' }}
+                            onClick={() => approveJoinRequest(s.id, uid)}>Approve</button>
+                          <button className="btn ghost" style={{ width: 'auto', padding: '4px 10px' }}
+                            onClick={() => denyJoinRequest(s.id, uid)}>Deny</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>Members</div>
+                    {s.members.map(uid => (
+                      <div key={uid} style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '2px 0' }}>
+                        <div style={{ flex: 1, fontSize: 12 }}>
+                          {shortUid(uid)} {uid === s.ownerId && <span style={{ color: '#a16207' }}>👑</span>}
+                          {uid === user.uid && <span style={{ color: 'var(--muted)' }}> (you)</span>}
+                        </div>
+                        {uid !== s.ownerId && (
+                          <button className="btn ghost" style={{ width: 'auto', padding: '2px 8px', fontSize: 11 }}
+                            onClick={() => removeSquadMember(s.id, uid)}>Remove</button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-            {s.ownerId === user.uid && (
-              <button className="btn ghost" style={{ width: 'auto' }}
-                onClick={() => setPickerFor(s.id)}>Crest</button>
-            )}
-            <button className="btn ghost" onClick={() => leaveSquad(s.id, user.uid)}>Leave</button>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <h2>Discover Public Squads</h2>
       {pub.length === 0 && <div className="empty">No public squads yet.</div>}
       <div className="list">
-        {pub.filter(s => !s.members.includes(user.uid)).map(s => (
-          <div key={s.id} className="list-item">
-            <SquadCrest logoId={s.logo} size={36} />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600 }}>{s.name}</div>
-              <div style={{ fontSize: 12, color: 'var(--muted)' }}>{s.members.length} members</div>
+        {pub.filter(s => !s.members.includes(user.uid)).map(s => {
+          const requested = (s.pendingMembers || []).includes(user.uid);
+          return (
+            <div key={s.id} className="list-item">
+              <SquadCrest logoId={s.logo} size={36} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600 }}>{s.name}</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                  {s.members.length} members {s.hq && '· 📍 HQ pinned'}
+                </div>
+              </div>
+              {requested ? (
+                <button className="btn ghost" style={{ width: 'auto' }} disabled>Requested ⏳</button>
+              ) : (
+                <button className="btn secondary" style={{ width: 'auto' }}
+                  onClick={() => requestJoinSquad(s.id, user.uid)}>Request join</button>
+              )}
             </div>
-            <button className="btn secondary" style={{ width: 'auto' }} onClick={() => joinSquad(s.id, user.uid)}>Join</button>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {pickerFor && (
