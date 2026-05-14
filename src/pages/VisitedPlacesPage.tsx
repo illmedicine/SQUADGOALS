@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../lib/AuthContext';
 import { useLocation } from '../lib/useLocation';
 import { logVisitedPlace, watchVisitedPlaces, type VisitedPlace } from '../lib/data';
+import { awardXp, XP } from '../lib/prestige';
 
 const CATEGORIES = ['Coffee', 'Food', 'Bar', 'Venue', 'Campus', 'Work', 'Other'];
 
@@ -24,6 +25,7 @@ export default function VisitedPlacesPage() {
       lat: pos.lat,
       lng: pos.lng
     });
+    await awardXp(user.uid, { xp: XP.CHECK_IN, checkIns: 1 });
     setName('');
   }
 

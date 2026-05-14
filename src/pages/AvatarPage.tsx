@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Avatar from '../components/Avatar';
 import { useAuth, type AvatarConfig } from '../lib/AuthContext';
+import { UNLOCKS, TIERS, tierForXp, loadLocalStats } from '../lib/prestige';
 
 const SKIN  = ['#ffe0c2', '#ffd9b3', '#f1c27d', '#d99566', '#c68642', '#8d5524', '#5b3318', '#3b2417'];
 const HAIR  = ['#1a1a1a', '#3b2417', '#7c4a1e', '#a0522d', '#d4a373', '#e2b04a', '#ef4444', '#ec4899', '#22d3ee', '#a78bfa', '#34d399', '#f8fafc'];
@@ -36,7 +37,11 @@ const ACCS = [
   { id: 'beanie', label: 'Beanie' },
   { id: 'headphones', label: 'Headphones' },
   { id: 'earrings', label: 'Earrings' },
-  { id: 'mask', label: 'Mask' }
+  { id: 'mask', label: 'Mask' },
+  { id: 'crown', label: '👑 Crown' },
+  { id: 'halo', label: '😇 Halo' },
+  { id: 'flame', label: '🔥 Flame' },
+  { id: 'cosmic', label: '✨ Cosmic' }
 ];
 
 type Tab = 'body' | 'hair' | 'face' | 'top' | 'bottom' | 'accs' | 'bg';
@@ -62,6 +67,8 @@ export default function AvatarPage() {
   });
   const [tab, setTab] = useState<Tab>('body');
   const [saving, setSaving] = useState(false);
+  const stats = loadLocalStats();
+  const tier = tierForXp(stats.xp);
 
   function set<K extends keyof AvatarConfig>(k: K, v: AvatarConfig[K]) {
     setCfg(prev => ({ ...prev, [k]: v }));
@@ -187,12 +194,24 @@ export default function AvatarPage() {
           <>
             <h3>Accessory</h3>
             <div className="chip-row">
-              {ACCS.map(a => (
-                <button key={a.id}
-                  className={'chip ' + (cfg.accessory === a.id ? 'active' : '')}
-                  onClick={() => set('accessory', a.id)}>{a.label}</button>
-              ))}
+              {ACCS.map(a => {
+                const req = UNLOCKS[a.id] ?? 0;
+                const locked = req > tier.tier;
+                return (
+                  <button key={a.id}
+                    className={'chip ' + (cfg.accessory === a.id ? 'active' : '') + (locked ? ' locked' : '')}
+                    disabled={locked}
+                    title={locked ? `Unlocks at ${TIERS[req].name}` : ''}
+                    onClick={() => !locked && set('accessory', a.id)}>
+                    {a.label}{locked ? ` 🔒${TIERS[req].icon}` : ''}
+                  </button>
+                );
+              })}
             </div>
+            <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10 }}>
+              You are <strong style={{ color: tier.color }}>{tier.icon} {tier.name}</strong>.
+              Earn XP by checking in, dropping public pins, and leaving reviews to unlock more.
+            </p>
           </>
         )}
 

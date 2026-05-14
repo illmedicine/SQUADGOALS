@@ -21,6 +21,34 @@ export const BADGES: Badge[] = [
   { id: 'prestige-iii',name: 'Prestige III',icon: '👑', description: '100 hours total nearby.', threshold: 6000 }
 ];
 
+// Check-in / pin-drop badges — earned from gameplay. Tracked via stats
+// rather than minute-accumulation, but live in the same UI list.
+export type StatBadge = {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+  check: (s: { checkIns?: number; publicPins?: number; reviews?: number; comments?: number; xp?: number }) => boolean;
+};
+export const STAT_BADGES: StatBadge[] = [
+  { id: 'first-checkin', name: 'First Check-in', icon: '📍', description: 'Check in for the first time.',
+    check: s => (s.checkIns || 0) >= 1 },
+  { id: 'ten-checkins',  name: 'Frequent Flyer', icon: '✈️', description: '10 check-ins.',
+    check: s => (s.checkIns || 0) >= 10 },
+  { id: 'fifty-checkins',name: 'Globetrotter',   icon: '🌍', description: '50 check-ins.',
+    check: s => (s.checkIns || 0) >= 50 },
+  { id: 'first-pin',     name: 'Pin Dropper',    icon: '📌', description: 'Drop your first public pin.',
+    check: s => (s.publicPins || 0) >= 1 },
+  { id: 'ten-pins',      name: 'Cartographer',   icon: '🗺️', description: '10 public pins.',
+    check: s => (s.publicPins || 0) >= 10 },
+  { id: 'first-review',  name: 'Critic',         icon: '📝', description: 'Leave your first review.',
+    check: s => (s.reviews || 0) >= 1 },
+  { id: 'ten-reviews',   name: 'Yelper',         icon: '⭐', description: '10 reviews left.',
+    check: s => (s.reviews || 0) >= 10 },
+  { id: 'social',        name: 'Social Butterfly', icon: '🦋', description: '25 comments posted.',
+    check: s => (s.comments || 0) >= 25 }
+];
+
 const KEY = 'squadren.badgeState';
 const PROX_M = 50;
 

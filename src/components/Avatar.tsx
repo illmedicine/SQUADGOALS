@@ -118,6 +118,36 @@ export default function Avatar({ config, size = 140, showBackground = false, hea
       {accessory === 'mask' && (
         <path d="M65,118 Q100,108 135,118 L135,138 Q100,150 65,138 Z" fill="#22d3ee" stroke="#0e7490" strokeWidth="1.5" />
       )}
+      {accessory === 'crown' && (
+        <g>
+          <path d="M58,62 L74,40 L90,58 L100,32 L110,58 L126,40 L142,62 L142,72 L58,72 Z" fill="#fbbf24" stroke="#92400e" strokeWidth="2" />
+          <circle cx="74" cy="40" r="4" fill="#ef4444" />
+          <circle cx="100" cy="32" r="4" fill="#3b82f6" />
+          <circle cx="126" cy="40" r="4" fill="#22c55e" />
+        </g>
+      )}
+      {accessory === 'halo' && (
+        <g>
+          <ellipse cx="100" cy="40" rx="46" ry="10" fill="none" stroke="#fde047" strokeWidth="5" opacity="0.9" />
+          <ellipse cx="100" cy="40" rx="46" ry="10" fill="none" stroke="#fff" strokeWidth="2" opacity="0.7" />
+        </g>
+      )}
+      {accessory === 'flame' && (
+        <g>
+          <path d="M70,60 Q85,30 100,55 Q115,30 130,60 Q120,40 100,15 Q80,40 70,60 Z" fill="#f97316" />
+          <path d="M82,58 Q92,40 100,55 Q108,40 118,58 Q110,45 100,30 Q90,45 82,58 Z" fill="#fde047" />
+        </g>
+      )}
+      {accessory === 'cosmic' && (
+        <g>
+          <circle cx="100" cy="42" r="22" fill="#1e1b4b" />
+          <circle cx="90" cy="38" r="1.5" fill="#fff" />
+          <circle cx="108" cy="35" r="1.2" fill="#fff" />
+          <circle cx="113" cy="48" r="1" fill="#fff" />
+          <circle cx="92" cy="50" r="1.3" fill="#fff" />
+          <path d="M100,15 L102,28 L115,30 L102,32 L100,45 L98,32 L85,30 L98,28 Z" fill="#a78bfa" />
+        </g>
+      )}
     </svg>
   );
 }
