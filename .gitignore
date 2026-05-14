@@ -5,6 +5,9 @@ dist-ssr
 .env.local
 .env.*.local
 *.log
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
 .DS_Store
 .vscode/*
 !.vscode/extensions.json
