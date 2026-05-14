@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/AuthContext';
 import {
@@ -11,6 +11,16 @@ import {
   SQUAD_LOGOS, DEFAULT_LOGO_ID, getLogo, type SquadLogo
 } from '../lib/squadLogos';
 import { loadLocalStats, tierForXp, TIERS } from '../lib/prestige';
+import { haversine } from '../lib/geo';
+import { useLocation } from '../lib/useLocation';
+
+// Built-in interest tags users can attach to their squad. Powers
+// "squads who share your vibe" discovery on the public list.
+const INTEREST_TAGS = [
+  'coffee', 'food', 'nightlife', 'music', 'concerts', 'sports',
+  'hiking', 'travel', 'gaming', 'study', 'work', 'art',
+  'fitness', 'photography', 'foodies', 'dance', 'cycling', 'pets'
+];
 
 function SquadCrest({ logoId, size = 36 }: { logoId?: string; size?: number }) {
   const logo = getLogo(logoId || DEFAULT_LOGO_ID);
@@ -86,6 +96,49 @@ function shortUid(uid: string) {
   return uid.length > 10 ? uid.slice(0, 6) + '…' + uid.slice(-3) : uid;
 }
 
+function fmtDist(m: number) {
+  if (!isFinite(m)) return null;
+  if (m < 1000) return Math.round(m) + ' m away';
+  return (m / 1000).toFixed(m < 10_000 ? 1 : 0) + ' km away';
+}
+
+function NearbyOrPublicRow({ squad, dist, requested, onRequest }: {
+  squad: Squad;
+  dist: number;
+  requested: boolean;
+  onRequest: () => void;
+}) {
+  const distLabel = fmtDist(dist);
+  return (
+    <div className="list-item">
+      <SquadCrest logoId={squad.logo} size={36} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontWeight: 600 }}>{squad.name}</div>
+        <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+          {squad.members.length} members
+          {squad.hq && ' · 📍 HQ'}
+          {distLabel && ' · ' + distLabel}
+        </div>
+        {squad.tags && squad.tags.length > 0 && (
+          <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {squad.tags.slice(0, 4).map(t => (
+              <span key={t} style={{
+                fontSize: 10, padding: '2px 7px', borderRadius: 999,
+                background: '#f1f5f9', color: '#475569', fontWeight: 600
+              }}>#{t}</span>
+            ))}
+          </div>
+        )}
+      </div>
+      {requested ? (
+        <button className="btn ghost" style={{ width: 'auto' }} disabled>Requested ⏳</button>
+      ) : (
+        <button className="btn secondary" style={{ width: 'auto' }} onClick={onRequest}>Request join</button>
+      )}
+    </div>
+  );
+}
+
 export default function SquadsPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -95,6 +148,9 @@ export default function SquadsPage() {
   const [visibility, setVisibility] = useState<'public' | 'private'>('private');
   const [newLogo, setNewLogo] = useState<string>(DEFAULT_LOGO_ID);
   const [pickerFor, setPickerFor] = useState<string | null>(null);
+  const [newTags, setNewTags] = useState<string[]>([]);
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const { pos } = useLocation({ enabled: !!user });
 
   const myStats = user ? loadLocalStats() : { xp: 0 } as any;
   const myTier = tierForXp(myStats.xp || 0).tier;
@@ -110,10 +166,11 @@ export default function SquadsPage() {
     if (!user || !name.trim()) return;
     await createSquad({
       name: name.trim(), ownerId: user.uid, members: [user.uid],
-      visibility, logo: newLogo, pendingMembers: []
+      visibility, logo: newLogo, pendingMembers: [], tags: newTags
     });
     setName('');
     setNewLogo(DEFAULT_LOGO_ID);
+    setNewTags([]);
   }
 
   async function setLogoFor(squadId: string, logo: string) {
@@ -161,6 +218,26 @@ export default function SquadsPage() {
           <option value="private">Private — invite only</option>
           <option value="public">Public — discoverable, join via request</option>
         </select>
+
+        <label style={{ marginTop: 8 }}>Interests (helps people find you)</label>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+          {INTEREST_TAGS.map(t => {
+            const on = newTags.includes(t);
+            return (
+              <button key={t} type="button"
+                onClick={() => setNewTags(prev => on ? prev.filter(x => x !== t) : [...prev, t])}
+                style={{
+                  padding: '4px 10px', borderRadius: 999, fontSize: 12,
+                  cursor: 'pointer',
+                  background: on ? 'linear-gradient(135deg,#8b5cf6,#ec4899)' : '#f1f5f9',
+                  color: on ? '#fff' : '#334155',
+                  border: 'none', fontWeight: 600
+                }}>
+                #{t}
+              </button>
+            );
+          })}
+        </div>
         <div style={{ height: 8 }} />
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
           You become the squad <strong>leader</strong> and can approve/deny members and pin the HQ on the map.
@@ -245,29 +322,71 @@ export default function SquadsPage() {
       </div>
 
       <h2>Discover Public Squads</h2>
-      {pub.length === 0 && <div className="empty">No public squads yet.</div>}
-      <div className="list">
-        {pub.filter(s => !s.members.includes(user.uid)).map(s => {
-          const requested = (s.pendingMembers || []).includes(user.uid);
+      {/* Tag filter — surface squads aligned with the user's vibe. */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '4px 0 10px' }}>
+        <button type="button" onClick={() => setTagFilter(null)}
+          style={{
+            padding: '4px 10px', borderRadius: 999, fontSize: 12, border: 'none', cursor: 'pointer',
+            fontWeight: 700,
+            background: !tagFilter ? '#111' : '#f1f5f9',
+            color: !tagFilter ? '#fff' : '#334155'
+          }}>All</button>
+        {INTEREST_TAGS.map(t => {
+          const on = tagFilter === t;
           return (
-            <div key={s.id} className="list-item">
-              <SquadCrest logoId={s.logo} size={36} />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600 }}>{s.name}</div>
-                <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                  {s.members.length} members {s.hq && '· 📍 HQ pinned'}
-                </div>
-              </div>
-              {requested ? (
-                <button className="btn ghost" style={{ width: 'auto' }} disabled>Requested ⏳</button>
-              ) : (
-                <button className="btn secondary" style={{ width: 'auto' }}
-                  onClick={() => requestJoinSquad(s.id, user.uid)}>Request join</button>
-              )}
-            </div>
+            <button key={t} type="button" onClick={() => setTagFilter(on ? null : t)}
+              style={{
+                padding: '4px 10px', borderRadius: 999, fontSize: 12, border: 'none', cursor: 'pointer',
+                background: on ? '#111' : '#f1f5f9',
+                color: on ? '#fff' : '#334155', fontWeight: 600
+              }}>
+              #{t}
+            </button>
           );
         })}
       </div>
+      {(() => {
+        const candidates = pub.filter(s => !s.members.includes(user.uid));
+        const filtered = tagFilter ? candidates.filter(s => (s.tags || []).includes(tagFilter)) : candidates;
+
+        // Proximity sort when we have GPS + at least one squad with HQ.
+        const withDist = filtered.map(s => ({
+          s,
+          dist: pos && s.hq ? haversine(pos, s.hq) : Infinity
+        }));
+        const nearby = withDist
+          .filter(x => x.dist !== Infinity && x.dist <= 25_000) // within 25km
+          .sort((a, b) => a.dist - b.dist)
+          .slice(0, 5);
+        const rest = withDist
+          .filter(x => !nearby.find(n => n.s.id === x.s.id))
+          .sort((a, b) => a.dist - b.dist);
+
+        return (
+          <>
+            {nearby.length > 0 && (
+              <div className="card" style={{ background: 'linear-gradient(135deg, #ec489922, #8b5cf622)' }}>
+                <div style={{ fontWeight: 800, marginBottom: 8 }}>📍 Squads near you</div>
+                <div className="list" style={{ background: 'transparent', padding: 0 }}>
+                  {nearby.map(({ s, dist }) => (
+                    <NearbyOrPublicRow key={s.id} squad={s} dist={dist}
+                      requested={(s.pendingMembers || []).includes(user.uid)}
+                      onRequest={() => requestJoinSquad(s.id, user.uid)} />
+                  ))}
+                </div>
+              </div>
+            )}
+            {filtered.length === 0 && <div className="empty">No public squads match this filter yet.</div>}
+            <div className="list">
+              {rest.map(({ s, dist }) => (
+                <NearbyOrPublicRow key={s.id} squad={s} dist={dist}
+                  requested={(s.pendingMembers || []).includes(user.uid)}
+                  onRequest={() => requestJoinSquad(s.id, user.uid)} />
+              ))}
+            </div>
+          </>
+        );
+      })()}
 
       {pickerFor && (
         <LogoPicker

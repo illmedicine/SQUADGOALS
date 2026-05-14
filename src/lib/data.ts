@@ -17,6 +17,7 @@ export type Squad = {
   visibility: 'public' | 'private';
   logo?: string;              // SQUAD_LOGOS id, defaults to 'star'
   hq?: { lat: number; lng: number; placeName?: string }; // squad meeting grounds / HQ pin
+  tags?: string[];            // interest tags for discovery (e.g., 'coffee', 'hiking')
   createdAt?: any;
 };
 

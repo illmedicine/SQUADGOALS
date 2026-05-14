@@ -1,8 +1,11 @@
 # Squad REN
 
-Find your friends in any crowd. Share precise location with your squads, earn
-proximity badges for staying close, and see a live map of where your crew
-hangs out.
+**The social map of your life.** Squad REN is what you get when you mash up
+Google Timeline, Yelp, and Snapchat Map — and then add real squads on top.
+
+Remember every place you've been, leave reviews other people actually trust,
+see your crew in real time, and form squads with the people closest to you
+(geographically *or* by interest).
 
 Squad REN is a single codebase that ships two ways:
 
@@ -11,15 +14,34 @@ Squad REN is a single codebase that ships two ways:
 2. **Native Android app** — the same web code wrapped with Capacitor; produces
    an `.aab` for the Play Store.
 
-## Features (prototype)
+## The four pillars
+
+- 🗺️ **Your timeline, but social.** Import your Google Timeline export or
+  let the app auto-log check-ins as you move. Every place becomes part of
+  your personal heat map — keep it private or share with your squad.
+- ⭐ **Real reviews from real people.** Drop a public pin anywhere. Squad-mates
+  and strangers leave star ratings and comments. Yelp-style discovery without
+  the corporate slant.
+- 👻 **Live presence, opt-in.** See your squad on the map right now. Toggle
+  public sharing to appear on the world map alongside everyone else who
+  opted in. Snap-Map vibes, your rules.
+- 👥 **Squads built around you.** Create a squad, pin its HQ on the map, pick
+  a tier-gated crest, and tag your interests. Discover other public squads
+  near you or sharing your vibe — request to join, leader approves.
+
+## Feature inventory
 
 - 🔐 Google Sign-In via Firebase Auth (with Demo Mode fallback)
-- 🗺️ Google Maps with live squad positions and visited-places overlay
-- 👥 Public / private squads with join codes
+- 🗺️ Google Maps with live squad positions, public people, public pins, and
+  500 seeded demo squads to make the world feel alive
+- 👥 Public / private squads with crests, HQ pins, interest tags, and
+  leader-approved join requests
 - 📍 Real-time presence using the browser Geolocation API
-- 🏆 Proximity badge engine (First Link → Prestige III)
-- 🙂 Customizable Toca-style cartoon avatar (SVG)
-- ☕ Visited-Places check-ins (Snap-Map-style activity feed)
+- 📅 Google Timeline import (Records.json, Semantic Location History, or new
+  Timeline.json) — bulk pin everywhere you've been
+- 🏆 7-tier prestige system (Rookie → Mythic) that unlocks 24 squad crests
+  and avatar accessories as you and your squad earn XP
+- 🙂 Customizable Toca-style cartoon avatar — doubles as your map marker
 - 📱 PWA + offline shell, ready for Capacitor → Android AAB
 
 ## Quick start
@@ -45,29 +67,13 @@ Open the URL Vite prints. Without env vars the app boots in **Demo Mode**
 ### Suggested Firestore rules (starter)
 
 ```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{db}/documents {
-    match /users/{uid} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == uid;
-    }
-    match /squads/{id} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null;
-      allow update, delete: if request.auth != null &&
-        request.auth.uid in resource.data.members;
-    }
-    match /presence/{uid} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == uid;
-    }
-    match /visitedPlaces/{id} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null && request.auth.uid == request.resource.data.uid;
-    }
-  }
-}
+VITE_GOOGLE_MAPS_API_KEY=AIza...
+VITE_FIREBASE_API_KEY=AIza...
+VITE_FIREBASE_AUTH_DOMAIN=squad-ren.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=squad-ren
+VITE_FIREBASE_STORAGE_BUCKET=squad-ren.appspot.com
+VITE_FIREBASE_MESSAGING_SENDER_ID=1234567890
+VITE_FIREBASE_APP_ID=1:1234567890:web:abcdef
 ```
 
 ## Deploy to GitHub Pages
