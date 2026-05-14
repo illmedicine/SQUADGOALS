@@ -14,6 +14,7 @@ export type Squad = {
   ownerId: string;
   members: string[];          // uids
   visibility: 'public' | 'private';
+  logo?: string;              // SQUAD_LOGOS id, defaults to 'star'
   createdAt?: any;
 };
 
@@ -52,6 +53,17 @@ export async function createSquad(s: Omit<Squad, 'id' | 'createdAt'>) {
   }
   const ref = await addDoc(collection(db!, 'squads'), { ...s, createdAt: serverTimestamp() });
   return { id: ref.id, ...s } as Squad;
+}
+
+export async function updateSquadLogo(squadId: string, logo: string) {
+  if (demo) {
+    const list = dget<Squad[]>('squads', []);
+    const sq = list.find(s => s.id === squadId);
+    if (sq) sq.logo = logo;
+    dset('squads', list);
+    return;
+  }
+  await updateDoc(doc(db!, 'squads', squadId), { logo });
 }
 
 export async function joinSquad(squadId: string, uid: string) {

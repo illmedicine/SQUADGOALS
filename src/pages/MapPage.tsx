@@ -378,7 +378,7 @@ export default function MapPage() {
               onClick={() => setSelected('sq-' + sq.id)}>
               {selected === 'sq-' + sq.id && (
                 <InfoWindowF position={{ lat: sq.lat, lng: sq.lng }} onCloseClick={() => setSelected(null)}>
-                  <SquadDetail squad={sq} />
+                  <SquadDetail squad={sq} onClose={() => setSelected(null)} />
                 </InfoWindowF>
               )}
             </MarkerF>
@@ -394,7 +394,7 @@ export default function MapPage() {
               icon={publicIcon(pp.category)} onClick={() => setSelected('pp:' + pp.id)}>
               {selected === 'pp:' + pp.id && (
                 <InfoWindowF position={{ lat: pp.lat, lng: pp.lng }} onCloseClick={() => setSelected(null)}>
-                  <PublicPinDetail pin={pp} />
+                  <PublicPinDetail pin={pp} onClose={() => setSelected(null)} />
                 </InfoWindowF>
               )}
             </MarkerF>
@@ -559,7 +559,7 @@ function publicIcon(category: string) {
   return svgMarker(color, emoji);
 }
 
-function PublicPinDetail({ pin }: { pin: PublicPin }) {
+function PublicPinDetail({ pin, onClose }: { pin: PublicPin; onClose: () => void }) {
   const { user } = useAuth();
   const [comments, setComments] = useState<PinComment[]>([]);
   const [text, setText] = useState('');
@@ -594,7 +594,14 @@ function PublicPinDetail({ pin }: { pin: PublicPin }) {
     : (pin.avgRating || pin.rating || 0);
 
   return (
-    <div style={{ color: '#111', minWidth: 240, maxWidth: 280 }}>
+    <div style={{ color: '#111', minWidth: 240, maxWidth: 280, position: 'relative', paddingRight: 22 }}>
+      <button onClick={onClose} aria-label="Close"
+        style={{
+          position: 'absolute', top: -4, right: -4,
+          width: 28, height: 28, borderRadius: 999,
+          background: '#111', color: '#fff', border: 'none',
+          cursor: 'pointer', fontSize: 16, lineHeight: 1, zIndex: 10
+        }}>×</button>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <div style={{ width: 36, height: 36, borderRadius: 18, overflow: 'hidden', background: '#fef3c7', flex: '0 0 36px' }}>
           {pin.avatar && <Avatar config={pin.avatar} size={36} headOnly />}
@@ -669,13 +676,20 @@ function StarPicker({ value, onChange }: { value: number; onChange: (v: number) 
   );
 }
 
-function SquadDetail({ squad }: { squad: DemoSquad }) {
+function SquadDetail({ squad, onClose }: { squad: DemoSquad; onClose: () => void }) {
   const tier = squadPrestige(squad.stats);
   const ageLabel = squad.stats.ageDays < 365
     ? `${squad.stats.ageDays} days`
     : `${(squad.stats.ageDays / 365).toFixed(1)} years`;
   return (
-    <div style={{ color: '#111', minWidth: 240, maxWidth: 280 }}>
+    <div style={{ color: '#111', minWidth: 240, maxWidth: 280, position: 'relative', paddingRight: 22 }}>
+      <button onClick={onClose} aria-label="Close"
+        style={{
+          position: 'absolute', top: -4, right: -4,
+          width: 28, height: 28, borderRadius: 999,
+          background: '#111', color: '#fff', border: 'none',
+          cursor: 'pointer', fontSize: 16, lineHeight: 1, zIndex: 10
+        }}>×</button>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{
           width: 44, height: 44, borderRadius: 12,
