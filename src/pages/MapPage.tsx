@@ -24,6 +24,19 @@ import { squadPrestige } from '../lib/demoSeed';
 const containerStyle: React.CSSProperties = { width: '100%', height: '100%' };
 const GOOGLE_MAPS_KEY = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string) || '';
 
+// Build a fast bbox-contains predicate; falls back to "always true" if no
+// bbox has been recorded yet (first render before the map is idle).
+function makeBoxFilter(b: { n: number; s: number; e: number; w: number } | null) {
+  if (!b) return (_lat: number, _lng: number) => true;
+  // Handle bboxes that cross the antimeridian (e: < w:).
+  const crosses = b.e < b.w;
+  return (lat: number, lng: number) => {
+    if (lat < b.s || lat > b.n) return false;
+    if (crosses) return lng >= b.w || lng <= b.e;
+    return lng >= b.w && lng <= b.e;
+  };
+}
+
 // `visualization` library required for HeatmapLayer. Static array reference
 // because the loader requires a stable identity to avoid re-loading.
 const LIBRARIES: ('visualization')[] = ['visualization'];
@@ -56,9 +69,14 @@ export default function MapPage() {
   const [squadPlaces, setSquadPlaces] = useState<VisitedPlace[]>([]);
   const [myPlaces, setMyPlaces] = useState<VisitedPlace[]>([]);
   const [publicPins, setPublicPins] = useState<PublicPin[]>([]);
-  // The 1,000 demo squads ship with the app; computed once.
+  // The 500 demo squads ship with the app; computed once.
   const demoSquadList = useMemo<DemoSquad[]>(() => listDemoSquads(), []);
   const [selected, setSelected] = useState<string | null>(null);
+  // Track viewport so we only render markers/heat inside the visible bbox.
+  // Updated on idle (debounced by Google internally) to avoid thrashing.
+  const mapRef = useRef<google.maps.Map | null>(null);
+  const [bbox, setBbox] = useState<{ n: number; s: number; e: number; w: number } | null>(null);
+  const [zoom, setZoom] = useState<number>(11);
   const [showTutorial, setShowTutorial] = useState<boolean>(() => localStorage.getItem('squadren.timelineTutorialSeen') !== 'true');
   // Two-step pin drop flow: user taps "+" to enter drop mode, then taps
   // anywhere on the map (or drags the preview marker) to pick a spot;
@@ -114,24 +132,61 @@ export default function MapPage() {
     const mates = presence.filter(p => p.uid !== user.uid).map(p => ({ lat: p.lat, lng: p.lng }));
     tickBadges(pos, mates);
     maybeAutoLogVisit(user.uid, user.displayName, pos, myPlaces).catch(() => {});
+    // Intentionally exclude `presence` and `myPlaces` from deps — we only
+    // want to push presence when *our* position/share state changes, not on
+    // every incoming squad-mate update (which was causing repeated re-renders
+    // and the "snap back to my location" feel while panning).
   }, [pos?.lat, pos?.lng, share, sharePublic, squadIds.join(',')]);
 
-  const center = pos || { lat: 37.7749, lng: -122.4194 };
+  // Stable map center: capture the first known position and never change it
+  // again, so panning around doesn't get yanked back by GPS updates.
+  const initialCenter = useRef<{ lat: number; lng: number } | null>(null);
+  if (!initialCenter.current && pos) initialCenter.current = pos;
+  const center = initialCenter.current || { lat: 37.7749, lng: -122.4194 };
   const myAvatar = user?.avatar || defaultAvatar;
   const meIconUrl = useMemo(() => avatarToDataUrl(myAvatar), [JSON.stringify(myAvatar)]);
 
   // Heat map points combine live presence + public pins + (when relevant)
   // squad check-ins. Only generated after the maps API is ready because
-  // google.maps.LatLng must exist.
+  // google.maps.LatLng must exist. Filtered to viewport + capped at low
+  // zoom levels to keep the heat layer responsive.
   const heatPoints = useMemo(() => {
     if (!isLoaded || !heat) return [] as google.maps.LatLng[];
+    const inBox = makeBoxFilter(bbox);
+    const cap = zoom < 4 ? 400 : zoom < 7 ? 1500 : 4000;
     const out: google.maps.LatLng[] = [];
-    presence.forEach(p => p.shareLocation && out.push(new google.maps.LatLng(p.lat, p.lng)));
-    publicPresence.forEach(p => out.push(new google.maps.LatLng(p.lat, p.lng)));
-    publicPins.forEach(p => out.push(new google.maps.LatLng(p.lat, p.lng)));
-    squadPlaces.slice(0, 300).forEach(p => out.push(new google.maps.LatLng(p.lat, p.lng)));
+    const push = (lat: number, lng: number) => {
+      if (out.length >= cap) return;
+      if (!inBox(lat, lng)) return;
+      out.push(new google.maps.LatLng(lat, lng));
+    };
+    presence.forEach(p => p.shareLocation && push(p.lat, p.lng));
+    publicPresence.forEach(p => push(p.lat, p.lng));
+    publicPins.forEach(p => push(p.lat, p.lng));
+    squadPlaces.slice(0, 300).forEach(p => push(p.lat, p.lng));
     return out;
-  }, [isLoaded, heat, presence, publicPresence, publicPins, squadPlaces]);
+  }, [isLoaded, heat, presence, publicPresence, publicPins, squadPlaces, bbox, zoom]);
+
+  // Per-layer marker subsets, filtered to the current viewport and capped
+  // at zoom-dependent limits so a continent-wide zoom never tries to render
+  // thousands of DOM markers at once.
+  const visibleSquads = useMemo(() => {
+    const inBox = makeBoxFilter(bbox);
+    const cap = zoom < 4 ? 60 : zoom < 6 ? 150 : zoom < 9 ? 300 : 500;
+    return demoSquadList.filter(s => inBox(s.lat, s.lng)).slice(0, cap);
+  }, [demoSquadList, bbox, zoom]);
+  const visiblePublicPresence = useMemo(() => {
+    if (zoom < 5) return []; // hide individual people at world zoom
+    const inBox = makeBoxFilter(bbox);
+    const cap = zoom < 7 ? 80 : zoom < 10 ? 200 : 500;
+    return publicPresence.filter(p => p.uid !== user?.uid && inBox(p.lat, p.lng)).slice(0, cap);
+  }, [publicPresence, bbox, zoom, user?.uid]);
+  const visiblePublicPins = useMemo(() => {
+    if (zoom < 4) return [];
+    const inBox = makeBoxFilter(bbox);
+    const cap = zoom < 6 ? 120 : zoom < 9 ? 300 : 800;
+    return publicPins.filter(p => inBox(p.lat, p.lng)).slice(0, cap);
+  }, [publicPins, bbox, zoom]);
 
   async function onTimelineFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -227,6 +282,25 @@ export default function MapPage() {
             clickableIcons: false, gestureHandling: 'greedy',
             draggableCursor: dropMode ? 'crosshair' : undefined
           }}
+          onLoad={m => {
+            mapRef.current = m;
+            // Seed bbox immediately so the first render isn't unfiltered.
+            const b = m.getBounds();
+            if (b) {
+              const ne = b.getNorthEast(), sw = b.getSouthWest();
+              setBbox({ n: ne.lat(), s: sw.lat(), e: ne.lng(), w: sw.lng() });
+            }
+            setZoom(m.getZoom() || 11);
+          }}
+          onIdle={() => {
+            const m = mapRef.current; if (!m) return;
+            const b = m.getBounds();
+            if (b) {
+              const ne = b.getNorthEast(), sw = b.getSouthWest();
+              setBbox({ n: ne.lat(), s: sw.lat(), e: ne.lng(), w: sw.lng() });
+            }
+            const z = m.getZoom(); if (typeof z === 'number') setZoom(z);
+          }}
           onClick={e => {
             if (!dropMode || !e.latLng) return;
             setDropPos({ lat: e.latLng.lat(), lng: e.latLng.lng() });
@@ -283,7 +357,7 @@ export default function MapPage() {
 
           {/* Public layer also shows every user who opted in to public sharing,
               even if they aren't in any of your squads. */}
-          {layer === 'public' && publicPresence.filter(p => p.uid !== user?.uid).map(p => (
+          {layer === 'public' && visiblePublicPresence.map(p => (
             <MarkerF key={'pub-' + p.uid} position={{ lat: p.lat, lng: p.lng }} title={p.displayName + ' (public)'}
               icon={publicPersonIcon()} onClick={() => setSelected('pub-' + p.uid)}>
               {selected === 'pub-' + p.uid && (
@@ -298,7 +372,7 @@ export default function MapPage() {
           ))}
 
           {/* Public squads — each marker is colored by the squad's prestige tier. */}
-          {layer === 'public' && demoSquadList.map(sq => (
+          {layer === 'public' && visibleSquads.map(sq => (
             <MarkerF key={'sq-' + sq.id} position={{ lat: sq.lat, lng: sq.lng }} title={sq.name}
               icon={squadBadgeIcon(squadPrestige(sq.stats))}
               onClick={() => setSelected('sq-' + sq.id)}>
@@ -315,7 +389,7 @@ export default function MapPage() {
               title={pl.placeName} icon={placeIcon('#8b5cf6')} />
           ))}
 
-          {layer === 'public' && publicPins.map(pp => (
+          {layer === 'public' && visiblePublicPins.map(pp => (
             <MarkerF key={pp.id} position={{ lat: pp.lat, lng: pp.lng }} title={pp.placeName}
               icon={publicIcon(pp.category)} onClick={() => setSelected('pp:' + pp.id)}>
               {selected === 'pp:' + pp.id && (

@@ -171,7 +171,8 @@ export function squadPrestige(s: SquadStats) {
 function build() {
   const rng = makeRng(20260514);
 
-  // Generate ~20 squads per city * 50 cities = 1000 squads.
+  // Generate ~10 squads per city * 50 cities = 500 squads (cut from 20/city
+  // for performance — was causing freezes on wide-zoom).
   const squads: (Squad & { lat: number; lng: number; city: string; country: string; stats: SquadStats })[] = [];
   const presence: Presence[] = [];
   const pins: PublicPin[] = [];
@@ -184,7 +185,7 @@ function build() {
   let pinCounter = 0;
 
   for (const city of CITIES) {
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 10; i++) {
       const sid = 'demo-sq-' + (squadCounter++);
       const memberCount = 4 + Math.floor(rng() * 97); // 4..100
       const ageDays = 1 + Math.floor(rng() * 1095);   // 1..1095 days
@@ -194,13 +195,14 @@ function build() {
       // City center with ~25km jitter for the squad's "home base".
       const center = jitter(rng, city.lat, city.lng, 0.25);
 
-      // Members & their public-share status.
+      // Members & their public-share status. To keep marker counts sane on
+      // the world map, fewer members publicly broadcast (8% vs 18%).
       const members: string[] = [];
       const sharingMembers: { uid: string; name: string }[] = [];
       for (let m = 0; m < memberCount; m++) {
         const uid = 'demo-u-' + (userCounter++);
         members.push(uid);
-        if (rng() < 0.18) sharingMembers.push({ uid, name: demoName(rng) });
+        if (rng() < 0.08) sharingMembers.push({ uid, name: demoName(rng) });
       }
 
       // Stats scale roughly with member count and squad age (older + bigger = more prestige).
@@ -239,7 +241,7 @@ function build() {
       }
 
       // Public pins authored by squad members, scattered around the city.
-      const squadPinCount = Math.min(pinCount, 3); // cap rendered pins per squad
+      const squadPinCount = Math.min(pinCount, 2); // cap rendered pins per squad
       for (let p = 0; p < squadPinCount; p++) {
         const author = members[Math.floor(rng() * members.length)];
         const authorName = demoName(rng);
