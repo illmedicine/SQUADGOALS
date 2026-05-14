@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/AuthContext';
 import {
   createSquad, leaveSquad, watchPublicSquadsLive, watchUserSquads,
@@ -196,7 +196,12 @@ export default function SquadsPage() {
 
   return (
     <div className="page">
-      <h1>Squads</h1>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h1 style={{ margin: 0 }}>Squads</h1>
+        <Link to="/leaderboard" className="btn ghost" style={{ width: 'auto', textDecoration: 'none' }}>
+          🏆 Leaderboard
+        </Link>
+      </div>
 
       <div className="card">
         <h2 style={{ marginTop: 0 }}>Create a Squad</h2>
