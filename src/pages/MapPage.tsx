@@ -1,17 +1,20 @@
-import { useEffect, useMemo, useState } from 'react';
-import { GoogleMap, useJsApiLoader, MarkerF, InfoWindowF } from '@react-google-maps/api';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { GoogleMap, useJsApiLoader, MarkerF, InfoWindowF, CircleF } from '@react-google-maps/api';
 import { useAuth } from '../lib/AuthContext';
 import { useLocation } from '../lib/useLocation';
 import {
   updatePresence, watchSquadPresence, watchUserSquads, watchVisitedPlaces,
+  watchMyVisitedPlaces, maybeAutoLogVisit, parseGoogleTimeline, importTimelinePins,
   type Presence, type Squad, type VisitedPlace
 } from '../lib/data';
 import { tickBadges } from '../lib/badges';
+import { avatarToDataUrl } from '../components/Avatar';
+import { defaultAvatar } from '../lib/AuthContext';
 
 const containerStyle: React.CSSProperties = { width: '100%', height: '100%' };
 const GOOGLE_MAPS_KEY = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string) || '';
 
-// Dark map styling so it matches the app theme.
+// Bright/pastel map styling so it matches the app theme.
 const mapStyles: google.maps.MapTypeStyle[] = [
   { elementType: 'geometry', stylers: [{ color: '#faf7ff' }] },
   { elementType: 'labels.text.fill', stylers: [{ color: '#4a4670' }] },
@@ -24,13 +27,20 @@ const mapStyles: google.maps.MapTypeStyle[] = [
   { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'simplified' }] }
 ];
 
+type Layer = 'squad' | 'mine';
+
 export default function MapPage() {
   const { user } = useAuth();
   const [share, setShare] = useState<boolean>(() => localStorage.getItem('squadren.share') !== 'false');
+  const [layer, setLayer] = useState<Layer>('squad');
   const [squads, setSquads] = useState<Squad[]>([]);
   const [presence, setPresence] = useState<Presence[]>([]);
-  const [places, setPlaces] = useState<VisitedPlace[]>([]);
+  const [squadPlaces, setSquadPlaces] = useState<VisitedPlace[]>([]);
+  const [myPlaces, setMyPlaces] = useState<VisitedPlace[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
+  const [importing, setImporting] = useState<{ done: number; total: number } | null>(null);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const { pos, error } = useLocation({ enabled: !!user });
 
   const { isLoaded, loadError } = useJsApiLoader({
@@ -52,9 +62,15 @@ export default function MapPage() {
     return watchSquadPresence(squadIds, setPresence);
   }, [squadIds.join(',')]);
 
-  useEffect(() => watchVisitedPlaces(setPlaces), []);
+  useEffect(() => watchVisitedPlaces(setSquadPlaces), []);
+  useEffect(() => {
+    if (!user) return;
+    return watchMyVisitedPlaces(user.uid, setMyPlaces);
+  }, [user?.uid]);
 
-  // Push presence + run badge engine on every position update.
+  // Push presence, run badge engine, AND auto-log unique visit pins as the
+  // user moves around. Auto-log is gated by distance + cooldown inside
+  // maybeAutoLogVisit so static users don't spam the DB.
   useEffect(() => {
     if (!user || !pos) return;
     updatePresence({
@@ -68,20 +84,48 @@ export default function MapPage() {
     });
     const mates = presence.filter(p => p.uid !== user.uid).map(p => ({ lat: p.lat, lng: p.lng }));
     tickBadges(pos, mates);
+    maybeAutoLogVisit(user.uid, user.displayName, pos, myPlaces).catch(() => {});
   }, [pos?.lat, pos?.lng, share, squadIds.join(',')]);
 
   const center = pos || { lat: 37.7749, lng: -122.4194 };
+  const myAvatar = user?.avatar || defaultAvatar;
+  const meIconUrl = useMemo(() => avatarToDataUrl(myAvatar), [JSON.stringify(myAvatar)]);
+
+  async function onTimelineFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f || !user) return;
+    setImportMsg(null);
+    const text = await f.text();
+    const pins = parseGoogleTimeline(text);
+    if (pins.length === 0) {
+      setImportMsg('Could not find any places in that file. Try Records.json, Semantic Location History month files, or the new Timeline.json from Google Takeout.');
+      return;
+    }
+    // Hard cap to keep the map snappy and Firestore costs low.
+    const capped = pins.slice(0, 2000);
+    setImporting({ done: 0, total: capped.length });
+    try {
+      await importTimelinePins(user.uid, user.displayName, capped, (done, total) => setImporting({ done, total }));
+      setImportMsg(`Imported ${capped.length} places from Google Timeline.`);
+      setLayer('mine');
+    } catch (err: any) {
+      setImportMsg('Import failed: ' + (err?.message || err));
+    } finally {
+      setImporting(null);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  }
 
   if (loadError) {
     return (
       <div className="page">
         <h1>Map</h1>
-        <div className="card">
-          <p className="error">Failed to load Google Maps. Check your API key.</p>
-        </div>
+        <div className="card"><p className="error">Failed to load Google Maps. Check your API key.</p></div>
       </div>
     );
   }
+
+  const placesToShow = layer === 'mine' ? myPlaces : squadPlaces;
 
   return (
     <div className="map-wrap" style={{ height: 'calc(100dvh - 76px)' }}>
@@ -90,7 +134,22 @@ export default function MapPage() {
           <div className="row">
             <span className="pill good">●</span>
             <span>{presence.filter(p => p.uid !== user?.uid).length} squad nearby</span>
+            <span className="pill">{myPlaces.length} of your places</span>
           </div>
+          <div className="layer-toggle" style={{ marginTop: 8 }}>
+            <button className={'chip ' + (layer === 'squad' ? 'active' : '')} onClick={() => setLayer('squad')}>Squad</button>
+            <button className={'chip ' + (layer === 'mine' ? 'active' : '')} onClick={() => setLayer('mine')}>My places</button>
+            <button className="chip" onClick={() => fileRef.current?.click()}>📥 Timeline</button>
+          </div>
+          {importing && (
+            <div style={{ fontSize: 12, marginTop: 6 }}>
+              Importing… {importing.done}/{importing.total}
+            </div>
+          )}
+          {importMsg && (
+            <div style={{ fontSize: 12, marginTop: 6, color: 'var(--muted)' }}>{importMsg}</div>
+          )}
+          <input ref={fileRef} type="file" accept=".json,application/json" style={{ display: 'none' }} onChange={onTimelineFile} />
         </div>
         <button className={'share-toggle ' + (share ? 'on' : '')} onClick={() => setShare(s => !s)}>
           {share ? '📍 Sharing' : '🚫 Hidden'}
@@ -113,7 +172,7 @@ export default function MapPage() {
         <GoogleMap
           mapContainerStyle={containerStyle}
           center={center}
-          zoom={pos ? 15 : 12}
+          zoom={pos ? 14 : 11}
           options={{
             styles: mapStyles,
             disableDefaultUI: true,
@@ -123,21 +182,35 @@ export default function MapPage() {
           }}
         >
           {pos && (
-            <MarkerF
-              position={pos}
-              title="You"
-              icon={meIcon()}
-              onClick={() => setSelected('me')}
-            >
-              {selected === 'me' && (
-                <InfoWindowF position={pos} onCloseClick={() => setSelected(null)}>
-                  <div style={{ color: '#111' }}>You ({user?.displayName})</div>
-                </InfoWindowF>
-              )}
-            </MarkerF>
+            <>
+              <CircleF
+                center={pos}
+                radius={60}
+                options={{
+                  fillColor: '#8b5cf6', fillOpacity: 0.12,
+                  strokeColor: '#8b5cf6', strokeOpacity: 0.4, strokeWeight: 2
+                }}
+              />
+              <MarkerF
+                position={pos}
+                title="You"
+                icon={{
+                  url: meIconUrl,
+                  scaledSize: new google.maps.Size(64, 70),
+                  anchor: new google.maps.Point(32, 70)
+                }}
+                onClick={() => setSelected('me')}
+              >
+                {selected === 'me' && (
+                  <InfoWindowF position={pos} onCloseClick={() => setSelected(null)}>
+                    <div style={{ color: '#111' }}>You ({user?.displayName})</div>
+                  </InfoWindowF>
+                )}
+              </MarkerF>
+            </>
           )}
 
-          {presence.filter(p => p.uid !== user?.uid).map(p => (
+          {layer === 'squad' && presence.filter(p => p.uid !== user?.uid).map(p => (
             <MarkerF
               key={p.uid}
               position={{ lat: p.lat, lng: p.lng }}
@@ -156,12 +229,12 @@ export default function MapPage() {
             </MarkerF>
           ))}
 
-          {places.slice(0, 100).map((pl, i) => (
+          {placesToShow.slice(0, 500).map((pl, i) => (
             <MarkerF
-              key={`place-${i}`}
+              key={`place-${layer}-${i}`}
               position={{ lat: pl.lat, lng: pl.lng }}
               title={pl.placeName}
-              icon={placeIcon()}
+              icon={placeIcon(layer === 'mine' ? '#8b5cf6' : '#f59e0b')}
             />
           ))}
         </GoogleMap>
@@ -179,10 +252,9 @@ function svgMarker(fill: string, label = ''): google.maps.Icon {
 </svg>`;
   return {
     url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
-    scaledSize: new google.maps.Size(36, 46),
-    anchor: new google.maps.Point(18, 46)
+    scaledSize: new google.maps.Size(34, 44),
+    anchor: new google.maps.Point(17, 44)
   };
 }
-function meIcon()    { return svgMarker('#8b5cf6', '★'); }
 function squadIcon() { return svgMarker('#ec4899', '●'); }
-function placeIcon() { return svgMarker('#f59e0b', '☕'); }
+function placeIcon(color: string) { return svgMarker(color, '★'); }

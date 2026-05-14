@@ -21,14 +21,28 @@ export type AvatarConfig = {
   hair: string;
   shirt: string;
   accessory: string;
+  // New optional fields — older saved avatars stay valid.
+  body?: 'masc' | 'fem' | 'neutral';
+  hairStyle?: 'short' | 'long' | 'bun' | 'curly' | 'mohawk' | 'bald' | 'ponytail' | 'buzz';
+  eyes?: string;
+  pants?: string;
+  shoes?: string;
+  background?: string;
 };
 
 const defaultAvatar: AvatarConfig = {
   skin: '#f1c27d',
   hair: '#3b2417',
   shirt: '#7c3aed',
-  accessory: 'none'
+  accessory: 'none',
+  body: 'neutral',
+  hairStyle: 'short',
+  eyes: '#1a1a1a',
+  pants: '#1e293b',
+  shoes: '#0f172a',
+  background: '#fef3c7'
 };
+export { defaultAvatar };
 
 type Ctx = {
   user: AppUser | null;
@@ -177,4 +191,3 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 export const useAuth = () => useContext(AuthContext);
-export { defaultAvatar };

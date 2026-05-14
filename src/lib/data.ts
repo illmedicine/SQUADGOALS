@@ -1,9 +1,9 @@
 import {
   collection, doc, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where,
-  addDoc, getDocs, arrayUnion, arrayRemove
+  addDoc, getDocs, arrayUnion, arrayRemove, writeBatch
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { LatLng } from './geo';
+import { haversine, type LatLng } from './geo';
 
 export type Squad = {
   id: string;
@@ -153,4 +153,137 @@ export function watchVisitedPlaces(cb: (v: VisitedPlace[]) => void) {
   return onSnapshot(collection(db!, 'visitedPlaces'), snap => {
     cb(snap.docs.map(d => d.data() as VisitedPlace));
   });
+}
+
+// Watch only the current user's visited places — used for the personal
+// "places I've been" overlay on the map.
+export function watchMyVisitedPlaces(uid: string, cb: (v: VisitedPlace[]) => void) {
+  if (demo) {
+    const tick = () => cb(dget<VisitedPlace[]>('places', []).filter(p => p.uid === uid));
+    tick();
+    const id = setInterval(tick, 2000);
+    return () => clearInterval(id);
+  }
+  const q = query(collection(db!, 'visitedPlaces'), where('uid', '==', uid));
+  return onSnapshot(q, snap => cb(snap.docs.map(d => d.data() as VisitedPlace)));
+}
+
+// Auto-log "places I've been" as the user moves. We only persist a new pin
+// when the user is at least minDistanceM away from every existing pin AND
+// hasn't logged anything in the last cooldownMs window. This keeps the map
+// usable when the user is stationary.
+const AUTO_RADIUS_M = 120;
+const AUTO_COOLDOWN_MS = 60 * 1000;
+let lastAutoAt = 0;
+export async function maybeAutoLogVisit(uid: string, displayName: string, pos: LatLng, existing: VisitedPlace[]) {
+  const now = Date.now();
+  if (now - lastAutoAt < AUTO_COOLDOWN_MS) return false;
+  const tooClose = existing.some(p => haversine(pos, { lat: p.lat, lng: p.lng }) < AUTO_RADIUS_M);
+  if (tooClose) return false;
+  lastAutoAt = now;
+  await logVisitedPlace({
+    uid, displayName,
+    placeName: 'Visited spot',
+    category: 'Auto',
+    lat: pos.lat, lng: pos.lng
+  });
+  return true;
+}
+
+// ---------- Google Timeline import (Takeout) ----------
+// Accepts either the legacy "Records.json" structure (locationHistory) or
+// the new "Timeline.json" structure (semanticSegments / visit items) from
+// Google Takeout's "Location History (Timeline)" archive. Deduplicates by
+// rounding coords to ~110m grid and skipping anything already present.
+export type TimelinePin = { lat: number; lng: number; placeName: string; visitedAt: number };
+
+export function parseGoogleTimeline(text: string): TimelinePin[] {
+  let json: any;
+  try { json = JSON.parse(text); } catch { return []; }
+  const out: TimelinePin[] = [];
+
+  // Records.json: { locations: [{ latitudeE7, longitudeE7, timestamp }] }
+  if (Array.isArray(json?.locations)) {
+    const seen = new Set<string>();
+    for (const r of json.locations) {
+      if (typeof r.latitudeE7 !== 'number' || typeof r.longitudeE7 !== 'number') continue;
+      const lat = r.latitudeE7 / 1e7;
+      const lng = r.longitudeE7 / 1e7;
+      const key = lat.toFixed(3) + ',' + lng.toFixed(3);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const ts = r.timestamp ? Date.parse(r.timestamp) : (r.timestampMs ? Number(r.timestampMs) : Date.now());
+      out.push({ lat, lng, placeName: 'Timeline point', visitedAt: ts });
+    }
+    return out;
+  }
+
+  // Semantic Location History: { timelineObjects: [{ placeVisit: { location, duration } }] }
+  if (Array.isArray(json?.timelineObjects)) {
+    for (const o of json.timelineObjects) {
+      const pv = o.placeVisit;
+      if (!pv?.location) continue;
+      const lat = pv.location.latitudeE7 / 1e7;
+      const lng = pv.location.longitudeE7 / 1e7;
+      const name = pv.location.name || pv.location.address || 'Visited place';
+      const ts = pv.duration?.startTimestamp ? Date.parse(pv.duration.startTimestamp) : Date.now();
+      out.push({ lat, lng, placeName: name, visitedAt: ts });
+    }
+    return out;
+  }
+
+  // New Timeline.json (2024+): { semanticSegments: [{ visit: { topCandidate: { placeLocation: "geo:lat,lng" } } }] }
+  if (Array.isArray(json?.semanticSegments)) {
+    for (const s of json.semanticSegments) {
+      const v = s.visit;
+      const loc = v?.topCandidate?.placeLocation || v?.location;
+      if (!loc || typeof loc !== 'string' || !loc.startsWith('geo:')) continue;
+      const [lat, lng] = loc.slice(4).split(',').map(Number);
+      if (!isFinite(lat) || !isFinite(lng)) continue;
+      const name = v?.topCandidate?.semanticType || 'Visited place';
+      const ts = s.startTime ? Date.parse(s.startTime) : Date.now();
+      out.push({ lat, lng, placeName: name, visitedAt: ts });
+    }
+    return out;
+  }
+
+  return out;
+}
+
+export async function importTimelinePins(
+  uid: string, displayName: string, pins: TimelinePin[],
+  onProgress?: (done: number, total: number) => void
+) {
+  if (demo) {
+    const list = dget<VisitedPlace[]>('places', []);
+    for (const p of pins) {
+      list.push({
+        uid, displayName,
+        placeName: p.placeName, category: 'Timeline',
+        lat: p.lat, lng: p.lng, visitedAt: p.visitedAt
+      });
+    }
+    dset('places', list.slice(0, 5000));
+    onProgress?.(pins.length, pins.length);
+    return pins.length;
+  }
+  // Firestore batched writes — 450 ops per batch to stay safely under 500.
+  let written = 0;
+  for (let i = 0; i < pins.length; i += 450) {
+    const slice = pins.slice(i, i + 450);
+    const batch = writeBatch(db!);
+    for (const p of slice) {
+      const ref = doc(collection(db!, 'visitedPlaces'));
+      batch.set(ref, {
+        uid, displayName,
+        placeName: p.placeName, category: 'Timeline',
+        lat: p.lat, lng: p.lng,
+        visitedAt: new Date(p.visitedAt)
+      });
+    }
+    await batch.commit();
+    written += slice.length;
+    onProgress?.(written, pins.length);
+  }
+  return written;
 }
