@@ -348,6 +348,37 @@ label {
 }
 .fab:hover { transform: scale(1.06); }
 .fab:disabled { opacity: 0.5; cursor: not-allowed; }
+.fab.active {
+  background: linear-gradient(135deg, #22c55e, #0ea5e9);
+  box-shadow: 0 8px 24px rgba(34, 197, 94, 0.5);
+}
+
+/* Drop-mode banner */
+.drop-banner {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 92px;
+  z-index: 6;
+  background: rgba(15, 12, 32, 0.92);
+  color: #fff;
+  padding: 10px 14px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  max-width: 92vw;
+}
+.drop-banner .chip {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+.drop-banner .chip.active { background: #22c55e; }
 
 /* Modal */
 .modal-backdrop {

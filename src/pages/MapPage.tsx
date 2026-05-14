@@ -52,6 +52,11 @@ export default function MapPage() {
   const [myPlaces, setMyPlaces] = useState<VisitedPlace[]>([]);
   const [publicPins, setPublicPins] = useState<PublicPin[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
+  // Two-step pin drop flow: user taps "+" to enter drop mode, then taps
+  // anywhere on the map (or drags the preview marker) to pick a spot;
+  // confirming opens the metadata modal. dropPos holds the chosen lat/lng.
+  const [dropMode, setDropMode] = useState(false);
+  const [dropPos, setDropPos] = useState<{ lat: number; lng: number } | null>(null);
   const [dropOpen, setDropOpen] = useState(false);
   const [importing, setImporting] = useState<{ done: number; total: number } | null>(null);
   const [importMsg, setImportMsg] = useState<string | null>(null);
@@ -191,7 +196,12 @@ export default function MapPage() {
           zoom={pos ? 14 : 11}
           options={{
             styles: mapStyles, disableDefaultUI: true, zoomControl: true,
-            clickableIcons: false, gestureHandling: 'greedy'
+            clickableIcons: false, gestureHandling: 'greedy',
+            draggableCursor: dropMode ? 'crosshair' : undefined
+          }}
+          onClick={e => {
+            if (!dropMode || !e.latLng) return;
+            setDropPos({ lat: e.latLng.lat(), lng: e.latLng.lng() });
           }}
         >
           {heat && heatPoints.length > 0 && (
@@ -258,17 +268,52 @@ export default function MapPage() {
               )}
             </MarkerF>
           ))}
+
+          {dropMode && dropPos && (
+            <MarkerF
+              position={dropPos}
+              draggable
+              onDragEnd={e => {
+                if (!e.latLng) return;
+                setDropPos({ lat: e.latLng.lat(), lng: e.latLng.lng() });
+              }}
+              icon={dropPreviewIcon()}
+              zIndex={9999}
+            />
+          )}
         </GoogleMap>
       )}
 
-      <button className="fab" onClick={() => setDropOpen(true)} disabled={!pos}
-        title={pos ? 'Drop a public pin here' : 'Waiting for GPS…'}>
-        ＋
+      {/* Drop-mode banner appears while user is choosing a spot. */}
+      {dropMode && (
+        <div className="drop-banner">
+          <span>📍 Tap anywhere on the map to place your pin{dropPos ? ' (or drag the marker)' : ''}.</span>
+          <button className="chip" onClick={() => { setDropMode(false); setDropPos(null); }}>Cancel</button>
+          {dropPos && (
+            <button className="chip active" onClick={() => setDropOpen(true)}>Continue →</button>
+          )}
+        </div>
+      )}
+
+      <button className={'fab' + (dropMode ? ' active' : '')}
+        onClick={() => {
+          if (dropMode) {
+            // Toggle off if no spot chosen; otherwise jump to confirmation.
+            if (dropPos) setDropOpen(true);
+            else setDropMode(false);
+          } else {
+            setDropMode(true);
+            // Pre-seed with current GPS as a convenience; user can drag or tap to move.
+            if (pos) setDropPos(pos);
+          }
+        }}
+        title={dropMode ? 'Confirm pin location' : 'Drop a public pin'}>
+        {dropMode ? '✓' : '＋'}
       </button>
 
-      {dropOpen && pos && user && (
+      {dropOpen && dropPos && user && (
         <DropPinModal
-          pos={pos}
+          pos={dropPos}
           onClose={() => setDropOpen(false)}
           onSubmit={async (data) => {
             const id = await createPublicPin({
@@ -279,19 +324,28 @@ export default function MapPage() {
               category: data.category,
               comment: data.comment,
               rating: data.rating,
-              lat: pos.lat, lng: pos.lng
+              lat: dropPos.lat, lng: dropPos.lng
             });
-            // Also log a private check-in + XP.
-            await logVisitedPlace({
-              uid: user.uid, displayName: user.displayName,
-              placeName: data.placeName, category: data.category,
-              lat: pos.lat, lng: pos.lng
-            }).catch(() => {});
+            // Also log a private check-in + XP — but only treat it as a
+            // check-in if the pin is within ~150 m of the user's actual
+            // location. Otherwise they're pinning a remote place.
+            const nearby = pos && Math.hypot(pos.lat - dropPos.lat, pos.lng - dropPos.lng) * 111000 < 150;
+            if (nearby) {
+              await logVisitedPlace({
+                uid: user.uid, displayName: user.displayName,
+                placeName: data.placeName, category: data.category,
+                lat: dropPos.lat, lng: dropPos.lng
+              }).catch(() => {});
+            }
             await awardXp(user.uid, {
-              xp: XP.PUBLIC_PIN + XP.CHECK_IN + (data.rating ? XP.REVIEW : 0),
-              publicPins: 1, checkIns: 1, reviews: data.rating ? 1 : 0
+              xp: XP.PUBLIC_PIN + (nearby ? XP.CHECK_IN : 0) + (data.rating ? XP.REVIEW : 0),
+              publicPins: 1,
+              checkIns: nearby ? 1 : 0,
+              reviews: data.rating ? 1 : 0
             });
             setDropOpen(false);
+            setDropMode(false);
+            setDropPos(null);
             setSelected('pp:' + id);
           }}
         />
@@ -314,6 +368,21 @@ function svgMarker(fill: string, label = ''): google.maps.Icon {
 }
 function squadIcon() { return svgMarker('#ec4899', '●'); }
 function placeIcon(c: string) { return svgMarker(c, '★'); }
+function dropPreviewIcon(): google.maps.Icon {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="52" height="64" viewBox="0 0 52 64">
+    <defs><filter id="b" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#000" flood-opacity="0.4"/></filter></defs>
+    <g filter="url(#b)">
+      <path d="M26 0C12 0 1 11 1 25c0 18 25 39 25 39s25-21 25-39C51 11 40 0 26 0z" fill="#ec4899" stroke="#fff" stroke-width="2"/>
+      <circle cx="26" cy="25" r="11" fill="#fff"/>
+      <text x="26" y="30" text-anchor="middle" font-size="16" font-family="system-ui" fill="#ec4899" font-weight="800">＋</text>
+    </g>
+  </svg>`;
+  return {
+    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    scaledSize: new google.maps.Size(52, 64),
+    anchor: new google.maps.Point(26, 64)
+  };
+}
 function publicIcon(category: string) {
   const map: Record<string, [string, string]> = {
     Coffee:   ['#92400e', '☕'],
