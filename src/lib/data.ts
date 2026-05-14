@@ -4,6 +4,9 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { haversine, type LatLng } from './geo';
+import { demoPublicPresence, demoSquads } from './demoSeed';
+
+export type DemoSquad = ReturnType<typeof demoSquads>[number];
 
 export type Squad = {
   id: string;
@@ -129,10 +132,12 @@ export function watchSquadPresence(squadIds: string[], cb: (p: Presence[]) => vo
 // Returns every user who has opted in to *public* location sharing.
 // Used to render the "world" presence layer alongside squad-mates.
 export function watchPublicPresence(cb: (p: Presence[]) => void, max = 200) {
+  // Demo presence is always overlaid so the world map feels alive.
+  const seeded = demoPublicPresence();
   if (demo) {
     const tick = () => {
       const all = dget<Presence[]>('presence', []);
-      cb(all.filter(p => p.sharePublic).slice(0, max));
+      cb([...all.filter(p => p.sharePublic), ...seeded].slice(0, max + seeded.length));
     };
     tick();
     const id = setInterval(tick, 2000);
@@ -140,9 +145,12 @@ export function watchPublicPresence(cb: (p: Presence[]) => void, max = 200) {
   }
   const q = query(collection(db!, 'presence'), where('sharePublic', '==', true), limit(max));
   return onSnapshot(q, snap => {
-    cb(snap.docs.map(d => d.data() as Presence));
+    cb([...snap.docs.map(d => d.data() as Presence), ...seeded]);
   });
 }
+
+// Demo squads with geographic centers — used to draw squad badges on the map.
+export function listDemoSquads(): DemoSquad[] { return demoSquads(); }
 
 // ---------- Visited places ----------
 export type VisitedPlace = {

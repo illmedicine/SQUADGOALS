@@ -7,8 +7,8 @@ import { useLocation } from '../lib/useLocation';
 import {
   updatePresence, watchSquadPresence, watchPublicPresence, watchUserSquads, watchVisitedPlaces,
   watchMyVisitedPlaces, maybeAutoLogVisit, parseGoogleTimeline, importTimelinePins,
-  logVisitedPlace,
-  type Presence, type Squad, type VisitedPlace
+  logVisitedPlace, listDemoSquads,
+  type Presence, type Squad, type VisitedPlace, type DemoSquad
 } from '../lib/data';
 import { tickBadges } from '../lib/badges';
 import Avatar, { avatarToDataUrl } from '../components/Avatar';
@@ -18,6 +18,8 @@ import {
   type PublicPin, type PinComment, type PinVisibility
 } from '../lib/publicPins';
 import { awardXp, XP } from '../lib/prestige';
+import { TIERS } from '../lib/prestige';
+import { squadPrestige } from '../lib/demoSeed';
 
 const containerStyle: React.CSSProperties = { width: '100%', height: '100%' };
 const GOOGLE_MAPS_KEY = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string) || '';
@@ -54,6 +56,8 @@ export default function MapPage() {
   const [squadPlaces, setSquadPlaces] = useState<VisitedPlace[]>([]);
   const [myPlaces, setMyPlaces] = useState<VisitedPlace[]>([]);
   const [publicPins, setPublicPins] = useState<PublicPin[]>([]);
+  // The 1,000 demo squads ship with the app; computed once.
+  const demoSquadList = useMemo<DemoSquad[]>(() => listDemoSquads(), []);
   const [selected, setSelected] = useState<string | null>(null);
   const [showTutorial, setShowTutorial] = useState<boolean>(() => localStorage.getItem('squadren.timelineTutorialSeen') !== 'true');
   // Two-step pin drop flow: user taps "+" to enter drop mode, then taps
@@ -171,6 +175,7 @@ export default function MapPage() {
             <span>{presence.filter(p => p.uid !== user?.uid).length} squad nearby</span>
             <span className="pill">{Math.max(0, publicPresence.filter(p => p.uid !== user?.uid).length)} public</span>
             <span className="pill">{publicPins.length} pins</span>
+            <span className="pill">{demoSquadList.length} squads</span>
           </div>
           <div className="layer-toggle" style={{ marginTop: 8 }}>
             <button className={'chip ' + (layer === 'public' ? 'active' : '')} onClick={() => setLayer('public')}>🌎 Public</button>
@@ -287,6 +292,19 @@ export default function MapPage() {
                     <strong>{p.displayName}</strong>
                     <div style={{ fontSize: 11, color: '#666' }}>Sharing publicly 🌎</div>
                   </div>
+                </InfoWindowF>
+              )}
+            </MarkerF>
+          ))}
+
+          {/* Public squads — each marker is colored by the squad's prestige tier. */}
+          {layer === 'public' && demoSquadList.map(sq => (
+            <MarkerF key={'sq-' + sq.id} position={{ lat: sq.lat, lng: sq.lng }} title={sq.name}
+              icon={squadBadgeIcon(squadPrestige(sq.stats))}
+              onClick={() => setSelected('sq-' + sq.id)}>
+              {selected === 'sq-' + sq.id && (
+                <InfoWindowF position={{ lat: sq.lat, lng: sq.lng }} onCloseClick={() => setSelected(null)}>
+                  <SquadDetail squad={sq} />
                 </InfoWindowF>
               )}
             </MarkerF>
@@ -418,6 +436,25 @@ function svgMarker(fill: string, label = ''): google.maps.Icon {
 function squadIcon() { return svgMarker('#ec4899', '●'); }
 function publicPersonIcon() { return svgMarker('#0ea5e9', '🌎'); }
 function placeIcon(c: string) { return svgMarker(c, '★'); }
+
+// Squad markers are bigger, layered (shield + tier emoji) so testers can spot
+// real organic squads against simple public pins at a glance.
+function squadBadgeIcon(tier: typeof TIERS[number]): google.maps.Icon {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="56" height="68" viewBox="0 0 56 68">
+    <defs><filter id="sb" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.35"/></filter></defs>
+    <g filter="url(#sb)">
+      <path d="M28 0 L52 10 L52 30 C52 48 28 64 28 64 C28 64 4 48 4 30 L4 10 Z"
+            fill="${tier.color}" stroke="#fff" stroke-width="2.5"/>
+      <circle cx="28" cy="26" r="14" fill="#fff" opacity="0.95"/>
+      <text x="28" y="32" text-anchor="middle" font-size="18" font-family="system-ui">${tier.icon}</text>
+    </g>
+  </svg>`;
+  return {
+    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    scaledSize: new google.maps.Size(40, 48),
+    anchor: new google.maps.Point(20, 48)
+  };
+}
 function dropPreviewIcon(): google.maps.Icon {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="52" height="64" viewBox="0 0 52 64">
     <defs><filter id="b" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#000" flood-opacity="0.4"/></filter></defs>
@@ -554,6 +591,44 @@ function StarPicker({ value, onChange }: { value: number; onChange: (v: number) 
           ★
         </button>
       ))}
+    </div>
+  );
+}
+
+function SquadDetail({ squad }: { squad: DemoSquad }) {
+  const tier = squadPrestige(squad.stats);
+  const ageLabel = squad.stats.ageDays < 365
+    ? `${squad.stats.ageDays} days`
+    : `${(squad.stats.ageDays / 365).toFixed(1)} years`;
+  return (
+    <div style={{ color: '#111', minWidth: 240, maxWidth: 280 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{
+          width: 44, height: 44, borderRadius: 12,
+          background: tier.color, color: '#fff',
+          display: 'grid', placeItems: 'center', fontSize: 22, flex: '0 0 44px'
+        }}>{tier.icon}</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 800, fontSize: 15 }}>{squad.name}</div>
+          <div style={{ fontSize: 11, color: '#666' }}>
+            {squad.city} · {squad.country} · {tier.name}
+          </div>
+        </div>
+      </div>
+      <div style={{
+        marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6,
+        fontSize: 12
+      }}>
+        <div>👥 <strong>{squad.stats.members}</strong> members</div>
+        <div>📅 <strong>{ageLabel}</strong></div>
+        <div>📍 <strong>{squad.stats.pins}</strong> pins</div>
+        <div>✈️ <strong>{squad.stats.checkIns}</strong> check-ins</div>
+        <div>⭐ <strong>{squad.stats.reviews}</strong> reviews</div>
+        <div>🏆 <strong>{squad.stats.totalXp.toLocaleString()}</strong> XP</div>
+      </div>
+      <div style={{ marginTop: 8, fontSize: 11, color: '#888' }}>
+        Demo squad — visible to all prototype testers.
+      </div>
     </div>
   );
 }

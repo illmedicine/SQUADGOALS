@@ -8,6 +8,7 @@ import {
   serverTimestamp, where, limit
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { demoPublicPins, demoPinComments } from './demoSeed';
 
 export type PinVisibility = 'public' | 'squad';
 
@@ -95,20 +96,26 @@ export function watchPublicPins(
     const ids = p.squadIds || [];
     return ids.some(s => viewerSquadIds.includes(s));
   });
+  // Demo pins ship with the app so prototype testers always see a populated
+  // world even before real users post anything.
+  const demoPins = demoPublicPins();
+  const merge = (live: PublicPin[]) => filter([...live, ...demoPins]);
   if (demo) {
-    const tick = () => cb(filter(dget<PublicPin[]>('publicPins', [])));
+    const tick = () => cb(merge(dget<PublicPin[]>('publicPins', [])));
     tick();
     const id = setInterval(tick, 2000);
     return () => clearInterval(id);
   }
   const q = query(collection(db!, 'publicPins'), orderBy('createdAt', 'desc'), limit(max));
   return onSnapshot(q, snap => {
-    cb(filter(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))));
+    cb(merge(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))));
   });
 }
 
 export async function addComment(pinId: string, c: Omit<PinComment, 'id' | 'createdAt'>) {
-  if (demo) {
+  // Comments on demo pins live only in this device's localStorage so that
+  // real Firestore doesn't accumulate junk docs under fake ids.
+  if (demo || pinId.startsWith('demo-pp-')) {
     const all = dget<Record<string, PinComment[]>>('pinComments', {});
     const list = all[pinId] || [];
     list.push({ ...c, id: 'c-' + Date.now(), createdAt: Date.now() });
@@ -131,15 +138,21 @@ export async function addComment(pinId: string, c: Omit<PinComment, 'id' | 'crea
 }
 
 export function watchComments(pinId: string, cb: (c: PinComment[]) => void) {
+  // Demo pins carry pre-baked comment threads so the social feel is intact.
+  const seeded = demoPinComments()[pinId] || [];
   if (demo) {
     const tick = () => {
       const all = dget<Record<string, PinComment[]>>('pinComments', {});
-      cb(all[pinId] || []);
+      cb([...(all[pinId] || []), ...seeded]);
     };
     tick();
     const id = setInterval(tick, 1500);
     return () => clearInterval(id);
   }
+  // For real Firestore pins, the demo seed is keyed by demo pin ids, so seeded
+  // will be empty unless this is a demo pin — in which case we just stream the
+  // seeded list (there's no Firestore doc to watch).
+  if (pinId.startsWith('demo-pp-')) { cb(seeded); return () => {}; }
   const q = query(collection(db!, 'publicPins', pinId, 'comments'), orderBy('createdAt', 'desc'), limit(100));
   return onSnapshot(q, snap => {
     cb(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
