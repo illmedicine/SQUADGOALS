@@ -1,6 +1,7 @@
 import Avatar from '../components/Avatar';
 import { useAuth, defaultAvatar } from '../lib/AuthContext';
 import { firebaseConfigured } from '../lib/firebase';
+import { Link } from 'react-router-dom';
 
 export default function ProfilePage() {
   const { user, logout } = useAuth();
@@ -20,6 +21,9 @@ export default function ProfilePage() {
             {firebaseConfigured ? 'Connected to Firebase' : 'Demo Mode'}
           </span>
         </div>
+        <Link to="/avatar" className="btn" style={{ marginTop: 14, display: 'inline-block', textDecoration: 'none' }}>
+          🎨 Customize Avatar
+        </Link>
       </div>
 
       <div className="card">
