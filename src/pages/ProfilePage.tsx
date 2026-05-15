@@ -135,6 +135,9 @@ export default function ProfilePage() {
       </div>
 
       <button className="btn danger" onClick={logout}>Sign Out</button>
+      <p style={{ textAlign: 'center', marginTop: 16, fontSize: 12, color: 'var(--muted)' }}>
+        <Link to="/privacy">Privacy Policy</Link>
+      </p>
     </div>
   );
 }

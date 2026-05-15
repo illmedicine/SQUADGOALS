@@ -8,6 +8,7 @@ import BadgesPage from './pages/BadgesPage';
 import LeaderboardPage from './pages/LeaderboardPage';
 import TripsPage from './pages/TripsPage';
 import ProfilePage from './pages/ProfilePage';
+import PrivacyPage from './pages/PrivacyPage';
 import VisitedPlacesPage from './pages/VisitedPlacesPage';
 import NavBar from './components/NavBar';
 
@@ -33,6 +34,7 @@ export default function App() {
           <Route path="/leaderboard" element={<Protected><LeaderboardPage /></Protected>} />
           <Route path="/trips" element={<Protected><TripsPage /></Protected>} />
           <Route path="/profile" element={<Protected><ProfilePage /></Protected>} />
+          <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

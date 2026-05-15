@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../lib/AuthContext';
 import { firebaseConfigured } from '../lib/firebase';
 
@@ -36,6 +37,10 @@ export default function LoginPage() {
       {error && <p className="error" style={{ marginTop: 16 }}>{error}</p>}
       <p className="footnote">
         Your location is only shared with squads you join — you control visibility per squad.
+      </p>
+      <p className="footnote" style={{ fontSize: 12 }}>
+        By continuing, you agree to our{' '}
+        <Link to="/privacy">Privacy Policy</Link>.
       </p>
       <p className="footnote" style={{ opacity: 0.4, fontSize: 11 }}>
         build {new Date().toISOString().slice(0,16)}
