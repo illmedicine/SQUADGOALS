@@ -79,7 +79,10 @@ export default function MapPage() {
   const [share, setShare] = useState<boolean>(() => localStorage.getItem('squadren.share') !== 'false');
   const [sharePublic, setSharePublic] = useState<boolean>(() => localStorage.getItem('squadren.sharePublic') === 'true');
   const [layer, setLayer] = useState<Layer>('public');
-  const [heat, setHeat] = useState<boolean>(true);
+  // Google deprecated the Heatmap Layer (unavailable from May 2026 onward).
+  // Default OFF so it doesn't crash the map. Toggle still works if Google
+  // hasn't pulled the constructor yet for a given session.
+  const [heat, setHeat] = useState<boolean>(false);
   const [squads, setSquads] = useState<Squad[]>([]);
   const [presence, setPresence] = useState<Presence[]>([]);
   const [publicPresence, setPublicPresence] = useState<Presence[]>([]);
@@ -723,7 +726,7 @@ export default function MapPage() {
             }
           }}
         >
-          {heat && heatPoints.length > 0 && (
+          {heat && heatPoints.length > 0 && (window as any).google?.maps?.visualization?.HeatmapLayer && (
             <HeatmapLayerF
               data={heatPoints}
               options={{
