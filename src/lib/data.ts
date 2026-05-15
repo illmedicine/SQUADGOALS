@@ -5,6 +5,7 @@ import {
 import { db } from './firebase';
 import { haversine, type LatLng } from './geo';
 import { demoPublicPresence, demoSquads } from './demoSeed';
+import { createPublicPin } from './publicPins';
 
 export type DemoSquad = ReturnType<typeof demoSquads>[number];
 
@@ -263,6 +264,9 @@ export type VisitedPlace = {
   lat: number;
   lng: number;
   visitedAt: any;
+  rating?: number;     // 1-5 stars from Google Reviews export
+  note?: string;       // review text / saved-place note
+  publicPinId?: string; // if this place was also promoted to a public pin
 };
 
 export async function logVisitedPlace(v: Omit<VisitedPlace, 'visitedAt'>) {
@@ -499,17 +503,49 @@ export function parseGoogleTimeline(text: string, fileName = ''): TimelinePin[] 
 
 export async function importTimelinePins(
   uid: string, displayName: string, pins: TimelinePin[],
-  onProgress?: (done: number, total: number) => void
+  onProgress?: (done: number, total: number) => void,
+  opts?: { avatar?: any; promoteReviewsToPublic?: boolean; squadIds?: string[] }
 ) {
+  const promote = opts?.promoteReviewsToPublic !== false; // default ON
+  const avatar = opts?.avatar;
+  const squadIds = opts?.squadIds || [];
+
+  // 1) Promote reviewed/saved places to public pins so the rest of the
+  //    Squad REN world sees them on the map. Only items with a rating or
+  //    explicit Review/Saved category are promoted — we don't expose raw
+  //    Timeline pings publicly because they're personal movement data.
+  async function maybePromote(p: TimelinePin): Promise<string | null> {
+    if (!promote) return null;
+    const isPublicWorthy = p.category === 'Review' || p.category === 'Saved' || !!p.rating;
+    if (!isPublicWorthy) return null;
+    try {
+      return await createPublicPin({
+        uid, displayName, avatar,
+        placeName: p.placeName,
+        category: p.category || 'Saved',
+        comment: p.note || '',
+        rating: p.rating || 0,
+        lat: p.lat, lng: p.lng,
+        visibility: 'public',
+        squadIds
+      });
+    } catch (e) {
+      console.warn('[import] could not promote to public pin', e);
+      return null;
+    }
+  }
+
   if (demo) {
     const list = dget<VisitedPlace[]>('places', []);
     for (const p of pins) {
+      const publicPinId = (await maybePromote(p)) || undefined;
       list.push({
         uid, displayName,
         placeName: p.placeName, category: p.category || 'Timeline',
         lat: p.lat, lng: p.lng, visitedAt: p.visitedAt,
         ...(p.rating ? { rating: p.rating } : {}),
-        ...(p.note ? { note: p.note } : {})
+        ...(p.note ? { note: p.note } : {}),
+        ...(publicPinId ? { publicPinId } : {})
       } as any);
     }
     dset('places', list.slice(0, 5000));
@@ -520,18 +556,23 @@ export async function importTimelinePins(
   let written = 0;
   for (let i = 0; i < pins.length; i += 450) {
     const slice = pins.slice(i, i + 450);
+    // Promote reviewed/saved pins in parallel — these are separate
+    // addDoc()s, not part of the visitedPlaces batch.
+    const promoIds = await Promise.all(slice.map(p => maybePromote(p)));
     const batch = writeBatch(db!);
-    for (const p of slice) {
+    slice.forEach((p, idx) => {
       const ref = doc(collection(db!, 'visitedPlaces'));
+      const ppid = promoIds[idx];
       batch.set(ref, {
         uid, displayName,
         placeName: p.placeName, category: p.category || 'Timeline',
         lat: p.lat, lng: p.lng,
         visitedAt: new Date(p.visitedAt),
         ...(p.rating ? { rating: p.rating } : {}),
-        ...(p.note ? { note: p.note } : {})
+        ...(p.note ? { note: p.note } : {}),
+        ...(ppid ? { publicPinId: ppid } : {})
       });
-    }
+    });
     await batch.commit();
     written += slice.length;
     onProgress?.(written, pins.length);

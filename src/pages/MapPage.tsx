@@ -229,9 +229,17 @@ export default function MapPage() {
     const capped = merged.slice(0, 2000);
     setImporting({ done: 0, total: capped.length });
     try {
-      await importTimelinePins(user.uid, user.displayName, capped, (d, t) => setImporting({ done: d, total: t }));
+      await importTimelinePins(
+        user.uid, user.displayName, capped,
+        (d, t) => setImporting({ done: d, total: t }),
+        { avatar: user.avatar || defaultAvatar, promoteReviewsToPublic: true, squadIds }
+      );
       const cats = new Set(capped.map(p => p.category || 'Timeline'));
-      setImportMsg(`Imported ${capped.length} places (${[...cats].join(', ')}).`);
+      const promoted = capped.filter(p => p.category === 'Review' || p.category === 'Saved' || p.rating).length;
+      setImportMsg(
+        `Imported ${capped.length} places (${[...cats].join(', ')})` +
+        (promoted > 0 ? ` — ${promoted} shared publicly so everyone can see them.` : '.')
+      );
       setLayer('mine');
     } catch (err: any) {
       setImportMsg('Import failed: ' + (err?.message || err));
@@ -419,10 +427,22 @@ export default function MapPage() {
             </MarkerF>
           ))}
 
-          {layer === 'mine' && myPlaces.slice(0, 500).map((pl, i) => (
-            <MarkerF key={`mine-${i}`} position={{ lat: pl.lat, lng: pl.lng }}
-              title={pl.placeName} icon={placeIcon('#8b5cf6')} />
-          ))}
+          {layer === 'mine' && myPlaces.slice(0, 500).map((pl, i) => {
+            const key = `mine-${i}`;
+            const isReview = pl.category === 'Review' || !!pl.rating;
+            const color = isReview ? '#f59e0b' : (pl.category === 'Saved' ? '#22c55e' : '#8b5cf6');
+            return (
+              <MarkerF key={key} position={{ lat: pl.lat, lng: pl.lng }}
+                title={pl.placeName} icon={placeIcon(color)}
+                onClick={() => setSelected('mine:' + key)}>
+                {selected === 'mine:' + key && (
+                  <InfoWindowF position={{ lat: pl.lat, lng: pl.lng }} onCloseClick={() => setSelected(null)}>
+                    <MyPlaceDetail place={pl} onClose={() => setSelected(null)} />
+                  </InfoWindowF>
+                )}
+              </MarkerF>
+            );
+          })}
 
           {layer === 'public' && visiblePublicPins.map(pp => (
             <MarkerF key={pp.id} position={{ lat: pp.lat, lng: pp.lng }} title={pp.placeName}
@@ -718,6 +738,43 @@ function SquadHqDetail({ squad, isMember, isLeader, isPending, onRequestJoin, on
             Request to join
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+function MyPlaceDetail({ place, onClose }: { place: VisitedPlace; onClose: () => void }) {
+  const isReview = place.category === 'Review' || !!place.rating;
+  const headerColor = isReview ? '#f59e0b' : (place.category === 'Saved' ? '#22c55e' : '#8b5cf6');
+  const dateStr = place.visitedAt
+    ? new Date(typeof place.visitedAt === 'number' ? place.visitedAt : place.visitedAt?.toDate?.() || place.visitedAt).toLocaleDateString()
+    : '';
+
+  return (
+    <div style={{ maxWidth: 260, fontFamily: 'inherit' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <div style={{ fontWeight: 800, color: headerColor, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          {place.category || 'Visited'}
+        </div>
+        <button onClick={onClose} aria-label="Close"
+          style={{ background: '#000', color: '#fff', border: 'none', borderRadius: 999, width: 22, height: 22, cursor: 'pointer', fontSize: 13, lineHeight: 1 }}>×</button>
+      </div>
+      <div style={{ fontWeight: 700, fontSize: 15, marginTop: 2 }}>{place.placeName}</div>
+      {place.rating ? (
+        <div style={{ marginTop: 4, color: '#f59e0b', fontSize: 14 }}>
+          {'★'.repeat(Math.round(place.rating))}
+          <span style={{ color: '#cbd5e1' }}>{'★'.repeat(5 - Math.round(place.rating))}</span>
+          <span style={{ color: '#64748b', fontSize: 11, marginLeft: 4 }}>{place.rating}/5</span>
+        </div>
+      ) : null}
+      {place.note && (
+        <div style={{ marginTop: 6, fontSize: 12, color: '#334155', whiteSpace: 'pre-wrap' }}>
+          "{place.note}"
+        </div>
+      )}
+      <div style={{ marginTop: 6, fontSize: 11, color: 'var(--muted)' }}>
+        {dateStr && <>Visited {dateStr} · </>}
+        {place.publicPinId ? '🌎 Shared publicly' : '🔒 Private to you'}
       </div>
     </div>
   );
