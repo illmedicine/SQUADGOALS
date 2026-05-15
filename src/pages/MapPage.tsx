@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, Fragment } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  GoogleMap, useJsApiLoader, MarkerF, InfoWindowF, CircleF, HeatmapLayerF
+  GoogleMap, useJsApiLoader, MarkerF, InfoWindowF, CircleF, HeatmapLayerF, PolylineF
 } from '@react-google-maps/api';
 import { useAuth, defaultAvatar } from '../lib/AuthContext';
 import { useLocation } from '../lib/useLocation';
@@ -19,6 +19,11 @@ import {
   type PublicPin, type PinComment, type PinVisibility
 } from '../lib/publicPins';
 import { awardXp, XP } from '../lib/prestige';
+import {
+  watchMyTrips, watchSquadTrips, appendPathPoint, markStopReached,
+  findReachedStop, PATH_MIN_M, PATH_MIN_MS, type Trip
+} from '../lib/trips';
+import { haversine } from '../lib/geo';
 import { TIERS } from '../lib/prestige';
 import { squadPrestige } from '../lib/demoSeed';
 import { getLogo, DEFAULT_LOGO_ID } from '../lib/squadLogos';
@@ -39,9 +44,10 @@ function makeBoxFilter(b: { n: number; s: number; e: number; w: number } | null)
   };
 }
 
-// `visualization` library required for HeatmapLayer. Static array reference
-// because the loader requires a stable identity to avoid re-loading.
-const LIBRARIES: ('visualization')[] = ['visualization'];
+// `visualization` for HeatmapLayer; `places` for nearby-search enrichment of
+// auto-logged visits. Static array reference because the loader requires a
+// stable identity to avoid re-loading.
+const LIBRARIES: ('visualization' | 'places')[] = ['visualization', 'places'];
 
 const mapStyles: google.maps.MapTypeStyle[] = [
   { elementType: 'geometry', stylers: [{ color: '#faf7ff' }] },
@@ -97,6 +103,18 @@ export default function MapPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const { pos, error } = useLocation({ enabled: !!user });
 
+  // Trips state. `myTrips` is everything the user owns; `liveTrips` is the
+  // realtime feed for squad-mates + public broadcasters whose paths should
+  // draw across the map.
+  const [myTrips, setMyTrips] = useState<Trip[]>([]);
+  const [liveTrips, setLiveTrips] = useState<Trip[]>([]);
+  const [checkInBusy, setCheckInBusy] = useState(false);
+  // Tracks the last GPS point we appended to our active trip's breadcrumb
+  // trail, so we can throttle writes by PATH_MIN_M / PATH_MIN_MS.
+  const lastPathPushRef = useRef<{ lat: number; lng: number; t: number } | null>(null);
+  // Memoize the PlacesService so we don't recreate it on every effect tick.
+  const placesSvcRef = useRef<google.maps.places.PlacesService | null>(null);
+
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: GOOGLE_MAPS_KEY,
     id: 'squadren-google-map',
@@ -128,6 +146,20 @@ export default function MapPage() {
     return watchMyVisitedPlaces(user.uid, setMyPlaces);
   }, [user?.uid]);
 
+  // Subscribe to trip data: our own (for path recording + arrival detection)
+  // and any squad-mate / public broadcaster whose trip is currently active.
+  useEffect(() => {
+    if (!user) return;
+    return watchMyTrips(user.uid, setMyTrips);
+  }, [user?.uid]);
+  useEffect(() => {
+    return watchSquadTrips(squadIds, setLiveTrips);
+  }, [squadIds.join(',')]);
+
+  // Currently-running trip we own. The map records GPS breadcrumbs to this
+  // trip's path and detects stop arrivals.
+  const myActiveTrip = useMemo(() => myTrips.find(t => t.status === 'active') || null, [myTrips]);
+
   useEffect(() => {
     if (!user || !pos) return;
     updatePresence({
@@ -140,12 +172,61 @@ export default function MapPage() {
     });
     const mates = presence.filter(p => p.uid !== user.uid).map(p => ({ lat: p.lat, lng: p.lng }));
     tickBadges(pos, mates);
-    maybeAutoLogVisit(user.uid, user.displayName, pos, myPlaces).catch(() => {});
+    // Resolve a real place name via the Places API before logging. Skips
+    // logging when the user is in the middle of nowhere (no nearby POI),
+    // which keeps the dashboard clean of "Visited spot" noise.
+    maybeAutoLogVisit(user.uid, user.displayName, pos, myPlaces, async (p) => {
+      if (!isLoaded || !mapRef.current || !window.google?.maps?.places) return null;
+      if (!placesSvcRef.current) {
+        placesSvcRef.current = new google.maps.places.PlacesService(mapRef.current);
+      }
+      return await new Promise<{ placeName: string; category?: string } | null>(resolve => {
+        placesSvcRef.current!.nearbySearch(
+          { location: p, radius: 60, type: 'point_of_interest' as any },
+          (results, status) => {
+            if (status !== google.maps.places.PlacesServiceStatus.OK || !results?.length) {
+              resolve(null); return;
+            }
+            const top = results[0];
+            const types = top.types || [];
+            const cat = types.includes('cafe') ? 'Coffee'
+              : types.includes('restaurant') || types.includes('meal_takeaway') ? 'Food'
+              : types.includes('bar') || types.includes('night_club') ? 'Bar'
+              : types.includes('gas_station') ? 'Gas'
+              : types.includes('gym') ? 'Gym'
+              : types.includes('park') ? 'Park'
+              : types.includes('store') || types.includes('shopping_mall') ? 'Shopping'
+              : 'Auto';
+            resolve({ placeName: top.name || 'Visited spot', category: cat });
+          }
+        );
+      });
+    }).catch(() => {});
+
+    // Trip path recording: throttled append of the current GPS fix while a
+    // trip is active. Throttle is by distance OR time, whichever fires first.
+    if (myActiveTrip) {
+      const last = lastPathPushRef.current;
+      const now = Date.now();
+      const farEnough = !last || haversine({ lat: last.lat, lng: last.lng }, pos) >= PATH_MIN_M;
+      const longEnough = !last || (now - last.t) >= PATH_MIN_MS;
+      if (farEnough || longEnough) {
+        lastPathPushRef.current = { lat: pos.lat, lng: pos.lng, t: now };
+        appendPathPoint(myActiveTrip.id, { lat: pos.lat, lng: pos.lng, t: now }).catch(() => {});
+      }
+      // Arrival detection: the first unreached stop within STOP_REACH_M
+      // gets marked reached and awards XP.
+      const reached = findReachedStop(myActiveTrip, pos);
+      if (reached >= 0) {
+        markStopReached(myActiveTrip.id, reached).catch(() => {});
+        awardXp(user.uid, { xp: XP.CHECK_IN, checkIns: 1 }).catch(() => {});
+      }
+    }
     // Intentionally exclude `presence` and `myPlaces` from deps — we only
     // want to push presence when *our* position/share state changes, not on
     // every incoming squad-mate update (which was causing repeated re-renders
     // and the "snap back to my location" feel while panning).
-  }, [pos?.lat, pos?.lng, share, sharePublic, squadIds.join(',')]);
+  }, [pos?.lat, pos?.lng, share, sharePublic, squadIds.join(','), myActiveTrip?.id]);
 
   // Stable map center: capture the first known position and never change it
   // again, so panning around doesn't get yanked back by GPS updates.
@@ -274,6 +355,59 @@ export default function MapPage() {
             <button className={'chip ' + (layer === 'squad' ? 'active' : '')} onClick={() => setLayer('squad')}>👥 Squad</button>
             <button className={'chip ' + (layer === 'mine' ? 'active' : '')} onClick={() => setLayer('mine')}>📍 Mine</button>
             <button className={'chip ' + (heat ? 'active' : '')} onClick={() => setHeat(h => !h)}>🔥 Heat</button>
+            <button
+              className="chip"
+              disabled={!pos || checkInBusy}
+              title={pos ? 'Drop a public check-in pin where you are right now' : 'Waiting for GPS…'}
+              onClick={async () => {
+                if (!user || !pos || checkInBusy) return;
+                setCheckInBusy(true);
+                try {
+                  // Resolve a friendly place name from nearby POIs when possible.
+                  let placeName = 'Checked in';
+                  if (isLoaded && mapRef.current && window.google?.maps?.places) {
+                    if (!placesSvcRef.current) {
+                      placesSvcRef.current = new google.maps.places.PlacesService(mapRef.current);
+                    }
+                    placeName = await new Promise<string>(resolve => {
+                      placesSvcRef.current!.nearbySearch(
+                        { location: pos, radius: 60, type: 'point_of_interest' as any },
+                        (results, status) => {
+                          if (status === google.maps.places.PlacesServiceStatus.OK && results?.[0]?.name) {
+                            resolve(results[0].name);
+                          } else resolve('Checked in');
+                        }
+                      );
+                    });
+                  }
+                  await createPublicPin({
+                    uid: user.uid,
+                    displayName: user.displayName,
+                    avatar: user.avatar || defaultAvatar,
+                    lat: pos.lat, lng: pos.lng,
+                    placeName,
+                    category: 'Check-in',
+                    rating: 0,
+                    comment: '',
+                    visibility: 'public',
+                    squadIds
+                  });
+                  await logVisitedPlace({
+                    uid: user.uid, displayName: user.displayName,
+                    placeName, category: 'Check-in',
+                    lat: pos.lat, lng: pos.lng
+                  });
+                  await awardXp(user.uid, { xp: XP.CHECK_IN, checkIns: 1 });
+                  setImportMsg(`✅ Checked in at ${placeName}`);
+                  setTimeout(() => setImportMsg(null), 3000);
+                } catch (e) {
+                  setImportMsg('Could not check in — try again.');
+                  setTimeout(() => setImportMsg(null), 3000);
+                } finally {
+                  setCheckInBusy(false);
+                }
+              }}
+            >{checkInBusy ? '⏳ Checking in…' : '📍 Check in here'}</button>
             <button className="chip" onClick={() => fileRef.current?.click()}>📥 Import Maps</button>
             <button className="chip" onClick={() => setShowTutorial(true)} title="How to import Google Timeline">❓ Help</button>
           </div>
@@ -499,6 +633,64 @@ export default function MapPage() {
               zIndex={9999}
             />
           )}
+
+          {/* Live trip paths: own trip in blue, squad-mate / public trips in
+              violet. Stop markers show planned + reached state. */}
+          {[...(myActiveTrip ? [myActiveTrip] : []), ...liveTrips.filter(t => !myActiveTrip || t.id !== myActiveTrip.id)].map(trip => {
+            const mine = user && trip.ownerId === user.uid;
+            const path = (trip.path || []).map(p => ({ lat: p.lat, lng: p.lng }));
+            const color = mine ? '#0ea5e9' : '#8b5cf6';
+            return (
+              <Fragment key={trip.id}>
+                {path.length >= 2 && (
+                  <PolylineF
+                    path={path}
+                    options={{
+                      strokeColor: color,
+                      strokeOpacity: 0.9,
+                      strokeWeight: 4,
+                      geodesic: true,
+                      icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 3 }, offset: '0', repeat: '14px' }]
+                    }}
+                  />
+                )}
+                {trip.stops.map((s, i) => (
+                  <MarkerF
+                    key={trip.id + ':' + i}
+                    position={{ lat: s.lat, lng: s.lng }}
+                    title={`${trip.title} · stop ${i + 1}: ${s.placeName}${s.reachedAt ? ' ✓' : ''}`}
+                    label={{ text: s.reachedAt ? '✓' : String(i + 1), color: '#fff', fontSize: '11px', fontWeight: '700' }}
+                    icon={{
+                      path: google.maps.SymbolPath.CIRCLE,
+                      scale: 11,
+                      fillColor: s.reachedAt ? '#22c55e' : color,
+                      fillOpacity: 1,
+                      strokeColor: '#fff',
+                      strokeWeight: 2
+                    }}
+                    zIndex={500}
+                  />
+                ))}
+                {/* Leading-edge marker for non-self trips so squad-mates can
+                    watch the friend's current GPS position cross the map. */}
+                {!mine && path.length > 0 && (
+                  <MarkerF
+                    position={path[path.length - 1]}
+                    title={`${trip.ownerName} · ${trip.title}`}
+                    icon={{
+                      path: google.maps.SymbolPath.CIRCLE,
+                      scale: 9,
+                      fillColor: color,
+                      fillOpacity: 1,
+                      strokeColor: '#fff',
+                      strokeWeight: 3
+                    }}
+                    zIndex={600}
+                  />
+                )}
+              </Fragment>
+            );
+          })}
         </GoogleMap>
       )}
 

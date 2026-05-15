@@ -311,16 +311,36 @@ export function watchMyVisitedPlaces(uid: string, cb: (v: VisitedPlace[]) => voi
 const AUTO_RADIUS_M = 120;
 const AUTO_COOLDOWN_MS = 60 * 1000;
 let lastAutoAt = 0;
-export async function maybeAutoLogVisit(uid: string, displayName: string, pos: LatLng, existing: VisitedPlace[]) {
+// Optional async resolver lets callers (MapPage) enrich auto-logged visits with
+// real place names from the Google Places API. Return null to skip logging
+// entirely (e.g. when the GPS pin is in the middle of a highway with no POI).
+export type AutoVisitResolver = (pos: LatLng) => Promise<{ placeName: string; category?: string } | null>;
+export async function maybeAutoLogVisit(
+  uid: string,
+  displayName: string,
+  pos: LatLng,
+  existing: VisitedPlace[],
+  resolver?: AutoVisitResolver
+) {
   const now = Date.now();
   if (now - lastAutoAt < AUTO_COOLDOWN_MS) return false;
   const tooClose = existing.some(p => haversine(pos, { lat: p.lat, lng: p.lng }) < AUTO_RADIUS_M);
   if (tooClose) return false;
+  let placeName = 'Visited spot';
+  let category: string | undefined = 'Auto';
+  if (resolver) {
+    try {
+      const r = await resolver(pos);
+      if (!r) return false;
+      placeName = r.placeName || placeName;
+      category = r.category || category;
+    } catch { /* fall through with default name */ }
+  }
   lastAutoAt = now;
   await logVisitedPlace({
     uid, displayName,
-    placeName: 'Visited spot',
-    category: 'Auto',
+    placeName,
+    category,
     lat: pos.lat, lng: pos.lng
   });
   return true;

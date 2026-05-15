@@ -6,6 +6,7 @@ import SquadsPage from './pages/SquadsPage';
 import AvatarPage from './pages/AvatarPage';
 import BadgesPage from './pages/BadgesPage';
 import LeaderboardPage from './pages/LeaderboardPage';
+import TripsPage from './pages/TripsPage';
 import ProfilePage from './pages/ProfilePage';
 import VisitedPlacesPage from './pages/VisitedPlacesPage';
 import NavBar from './components/NavBar';
@@ -30,6 +31,7 @@ export default function App() {
           <Route path="/avatar" element={<Protected><AvatarPage /></Protected>} />
           <Route path="/badges" element={<Protected><BadgesPage /></Protected>} />
           <Route path="/leaderboard" element={<Protected><LeaderboardPage /></Protected>} />
+          <Route path="/trips" element={<Protected><TripsPage /></Protected>} />
           <Route path="/profile" element={<Protected><ProfilePage /></Protected>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

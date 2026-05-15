@@ -1,28 +1,38 @@
 # Squad REN
 
-**The social map of your life.** Squad REN is what you get when you mash up
-Google Timeline, Yelp, and Snapchat Map — and then add real squads on top.
+**Reputable Engagement Network.** Squad REN is a play on *squadron* — a tight
+crew moving together — and the REN acronym is the mission: grow real
+communities around the places people actually go to.
 
-Remember every place you've been, leave reviews other people actually trust,
-see your crew in real time, and form squads with the people closest to you
-(geographically *or* by interest).
+Become a regular at your coffee shop, your gym, your favorite bar, your
+gas station. Check in publicly so the other regulars know you're around.
+Plan trips with stops, check into each one to earn achievements, and let
+your squad watch your journey cross the map in real time.
 
-Squad REN is a single codebase that ships two ways:
+Under the hood it's also what you get when you mash up Google Timeline,
+Yelp, and Snapchat Map — with squads, trips, and live presence on top.
+
+Squad REN ships two ways from one codebase:
 
 1. **Web prototype / PWA** — deployed to GitHub Pages for fast iteration on
    any device.
 2. **Native Android app** — the same web code wrapped with Capacitor; produces
    an `.aab` for the Play Store.
 
-## The four pillars
+## The pillars
 
-- 🗺️ **Your timeline, but social.** Import your Google Timeline export or
-  let the app auto-log check-ins as you move. Every place becomes part of
-  your personal heat map — keep it private or share with your squad.
+- ☕ **Become a regular.** Check in at the places you frequent — coffee shops,
+  bars, gyms, gas stations. Other regulars see you on the map and a community
+  forms around the spot.
+- 🧭 **Plan trips, track them live.** Build a multi-stop trip in advance,
+  then physically check into each stop from your phone to earn achievements.
+  Squad-mates watch your path draw across the map in real time.
+- ⭐ **Real reviews from real people.** Drop a public pin anywhere. Squad-matesty
+  forms around the spot.
+- 🧭 **Plan trips, track them live.** Build a multi-stop trip in advance,
+  then physically check into each stop from your phone to earn achievements.
+  Squad-mates watch your path draw across the map in real time.
 - ⭐ **Real reviews from real people.** Drop a public pin anywhere. Squad-mates
-  and strangers leave star ratings and comments. Yelp-style discovery without
-  the corporate slant.
-- 👻 **Live presence, opt-in.** See your squad on the map right now. Toggle
   public sharing to appear on the world map alongside everyone else who
   opted in. Snap-Map vibes, your rules.
 - 👥 **Squads built around you.** Create a squad, pin its HQ on the map, pick

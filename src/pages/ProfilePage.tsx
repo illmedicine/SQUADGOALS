@@ -5,16 +5,22 @@ import { Link } from 'react-router-dom';
 
 const PILLARS: { icon: string; title: string; copy: string; color: string }[] = [
   {
-    icon: '🗺️',
-    title: 'Your timeline, but social',
-    color: '#0ea5e9',
-    copy: 'Import Google Timeline or auto-log check-ins as you go. Every place you’ve been becomes a personal heat map you can revisit, share, or keep private.'
+    icon: '☕',
+    title: 'Become a regular',
+    color: '#22c55e',
+    copy: 'Check in at the places you actually go to — coffee shops, bars, gas stations, the gym. Meet the other regulars and turn frequent visits into real connections.'
+  },
+  {
+    icon: '🧭',
+    title: 'Plan trips & track them live',
+    copy: 'Plan a trip with stops in advance. Check into each stop from your phone to earn achievements, and your squad watches your path cross the map in real time.',
+    color: '#0ea5e9'
   },
   {
     icon: '⭐',
     title: 'Real reviews from real people',
     color: '#f59e0b',
-    copy: 'Drop a public pin anywhere — restaurants, parks, parties, hidden spots. Squad-mates and strangers leave star ratings and comments, just like Yelp.'
+    copy: 'Drop a public pin anywhere. Squad-mates and strangers leave star ratings and comments, just like Yelp — powered by people who keep coming back.'
   },
   {
     icon: '👻',
@@ -26,7 +32,7 @@ const PILLARS: { icon: string; title: string; copy: string; color: string }[] = 
     icon: '👥',
     title: 'Squads built around you',
     color: '#8b5cf6',
-    copy: 'Form a squad with the people nearest to you, or with strangers who share your interests. Pin an HQ on the map, request to join others, level up together.'
+    copy: 'Form a squad with the regulars at your local spot, or with strangers who share your interests. Pin an HQ, request to join others, level up together.'
   }
 ];
 
@@ -64,16 +70,23 @@ export default function ProfilePage() {
       <div className="card" style={{ background: 'linear-gradient(135deg, #8b5cf622, #ec489922)' }}>
         <h2 style={{ marginTop: 0, fontSize: 20 }}>What is Squad REN?</h2>
         <p style={{ color: 'var(--muted)', marginTop: 4 }}>
-          Squad REN is the social map of your life. Think{' '}
+          <strong>Squad REN</strong> is a play on <em>squadron</em> — a tight crew moving together.
+          REN stands for <strong style={{ color: '#8b5cf6' }}>Reputable Engagement Network</strong>:
+          a place to grow communities around the spots you actually go to. Check in at
+          your coffee shop, your gym, your bar, your gas station — and meet the regulars
+          who hang out there too.
+        </p>
+        <p style={{ color: 'var(--muted)', marginTop: 8, fontSize: 13 }}>
+          Think{' '}
           <strong style={{ color: '#0ea5e9' }}>Google Timeline</strong> meets{' '}
           <strong style={{ color: '#f59e0b' }}>Yelp</strong> meets{' '}
-          <strong style={{ color: '#ec4899' }}>Snapchat Map</strong> — with squads on top.
-          A place to remember where you’ve been, find your people, and rep your crew.
+          <strong style={{ color: '#ec4899' }}>Snapchat Map</strong> — with squads,
+          trip planning, and live journey tracking on top.
         </p>
       </div>
 
       <div className="card">
-        <h2 style={{ marginTop: 0 }}>Four things you can do</h2>
+        <h2 style={{ marginTop: 0 }}>Five things you can do</h2>
         <div style={{ display: 'grid', gap: 10 }}>
           {PILLARS.map(p => (
             <div key={p.title} style={{
