@@ -198,20 +198,40 @@ export default function MapPage() {
   }, [publicPins, bbox, zoom]);
 
   async function onTimelineFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f || !user) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0 || !user) return;
     setImportMsg(null);
-    const text = await f.text();
-    const pins = parseGoogleTimeline(text);
-    if (pins.length === 0) {
-      setImportMsg('Could not find places in that file. Try Records.json, monthly Semantic Location History, or the new Timeline.json.');
+
+    // Parse every selected file and merge — supports dropping the whole
+    // "Maps (your places)" + "Location History" + "Saved" set at once.
+    const allPins: ReturnType<typeof parseGoogleTimeline> = [];
+    for (const f of files) {
+      try {
+        const text = await f.text();
+        const pins = parseGoogleTimeline(text, f.name);
+        allPins.push(...pins);
+      } catch (err) {
+        console.warn('[import] failed to read', f.name, err);
+      }
+    }
+
+    // Final dedupe across files (rounded coords + name).
+    const seen = new Set<string>();
+    const merged = allPins.filter(p => {
+      const key = p.lat.toFixed(3) + ',' + p.lng.toFixed(3) + '|' + p.placeName;
+      if (seen.has(key)) return false; seen.add(key); return true;
+    });
+
+    if (merged.length === 0) {
+      setImportMsg('No places found. Supported: Records.json, Timeline.json, Semantic Location History, Saved Places.json, Reviews.json, or Saved/*.csv.');
       return;
     }
-    const capped = pins.slice(0, 2000);
+    const capped = merged.slice(0, 2000);
     setImporting({ done: 0, total: capped.length });
     try {
       await importTimelinePins(user.uid, user.displayName, capped, (d, t) => setImporting({ done: d, total: t }));
-      setImportMsg(`Imported ${capped.length} places from Google Timeline.`);
+      const cats = new Set(capped.map(p => p.category || 'Timeline'));
+      setImportMsg(`Imported ${capped.length} places (${[...cats].join(', ')}).`);
       setLayer('mine');
     } catch (err: any) {
       setImportMsg('Import failed: ' + (err?.message || err));
@@ -246,7 +266,7 @@ export default function MapPage() {
             <button className={'chip ' + (layer === 'squad' ? 'active' : '')} onClick={() => setLayer('squad')}>👥 Squad</button>
             <button className={'chip ' + (layer === 'mine' ? 'active' : '')} onClick={() => setLayer('mine')}>📍 Mine</button>
             <button className={'chip ' + (heat ? 'active' : '')} onClick={() => setHeat(h => !h)}>🔥 Heat</button>
-            <button className="chip" onClick={() => fileRef.current?.click()}>📥 Timeline</button>
+            <button className="chip" onClick={() => fileRef.current?.click()}>📥 Import Maps</button>
             <button className="chip" onClick={() => setShowTutorial(true)} title="How to import Google Timeline">❓ Help</button>
           </div>
           {importing && (
@@ -255,7 +275,7 @@ export default function MapPage() {
           {importMsg && (
             <div style={{ fontSize: 12, marginTop: 6, color: 'var(--muted)' }}>{importMsg}</div>
           )}
-          <input ref={fileRef} type="file" accept=".json,application/json" style={{ display: 'none' }} onChange={onTimelineFile} />
+          <input ref={fileRef} type="file" multiple accept=".json,.csv,application/json,text/csv" style={{ display: 'none' }} onChange={onTimelineFile} />
         </div>
         <div className="share-stack">
           <button className={'share-toggle ' + (share ? 'on' : '')} onClick={() => setShare(s => !s)}>

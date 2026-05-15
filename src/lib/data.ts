@@ -322,35 +322,152 @@ export async function maybeAutoLogVisit(uid: string, displayName: string, pos: L
   return true;
 }
 
-// ---------- Google Timeline import (Takeout) ----------
-// Accepts either the legacy "Records.json" structure (locationHistory) or
-// the new "Timeline.json" structure (semanticSegments / visit items) from
-// Google Takeout's "Location History (Timeline)" archive. Deduplicates by
-// rounding coords to ~110m grid and skipping anything already present.
-export type TimelinePin = { lat: number; lng: number; placeName: string; visitedAt: number };
+// ---------- Google Maps / Timeline import (Takeout) ----------
+// Accepts every flavor of Google Takeout that contains place coordinates:
+//   • Location History → Records.json  (raw lat/lng pings)
+//   • Location History → Semantic Location History (placeVisit objects)
+//   • Location History → Timeline.json (2024+, semanticSegments)
+//   • Maps (your places) → Saved Places.json (GeoJSON FeatureCollection)
+//   • Maps (your places) → Reviews.json     (GeoJSON FeatureCollection)
+//   • Saved/*.csv                           (Google Maps saved-list exports
+//     — Want to go, Favorites, Starred, etc. URLs contain @lat,lng)
+// Deduplicates by rounding coords to ~110m grid.
+export type TimelinePin = {
+  lat: number;
+  lng: number;
+  placeName: string;
+  visitedAt: number;
+  category?: string;   // 'Timeline' | 'Saved' | 'Review' | 'Want to go' …
+  rating?: number;     // 1-5 stars when imported from Reviews.json
+  note?: string;       // review text / saved-place note
+};
 
-export function parseGoogleTimeline(text: string): TimelinePin[] {
-  let json: any;
-  try { json = JSON.parse(text); } catch { return []; }
+function pushUnique(out: TimelinePin[], seen: Set<string>, p: TimelinePin) {
+  const key = p.lat.toFixed(3) + ',' + p.lng.toFixed(3) + '|' + (p.placeName || '');
+  if (seen.has(key)) return;
+  seen.add(key);
+  out.push(p);
+}
+
+// Try to pull lat,lng out of a Google Maps URL. Handles:
+//   .../@37.42,-122.08,15z/...
+//   ?q=37.42,-122.08
+//   /place/.../data=!3m1!4b1!4m...!3d37.42!4d-122.08
+function coordsFromMapsUrl(url: string): { lat: number; lng: number } | null {
+  if (!url) return null;
+  let m = url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+  if (!m) m = url.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
+  if (!m) m = url.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+  if (!m) return null;
+  const lat = Number(m[1]); const lng = Number(m[2]);
+  if (!isFinite(lat) || !isFinite(lng)) return null;
+  return { lat, lng };
+}
+
+// Parse a "geo:lat,lng" URI (Timeline.json semanticSegments format).
+function coordsFromGeoUri(s: any): { lat: number; lng: number } | null {
+  if (typeof s !== 'string' || !s.startsWith('geo:')) return null;
+  const [lat, lng] = s.slice(4).split(',').map(Number);
+  return isFinite(lat) && isFinite(lng) ? { lat, lng } : null;
+}
+
+// Naive CSV row splitter that handles quoted fields with commas inside.
+function csvRows(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = []; let cell = ''; let q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+      else if (c === '"') { q = false; }
+      else cell += c;
+    } else {
+      if (c === '"') q = true;
+      else if (c === ',') { row.push(cell); cell = ''; }
+      else if (c === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
+      else if (c === '\r') { /* skip */ }
+      else cell += c;
+    }
+  }
+  if (cell.length || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+
+export function parseGoogleTimeline(text: string, fileName = ''): TimelinePin[] {
   const out: TimelinePin[] = [];
+  const seen = new Set<string>();
+  const lowerName = fileName.toLowerCase();
 
-  // Records.json: { locations: [{ latitudeE7, longitudeE7, timestamp }] }
+  // ----- CSV exports (Saved/*.csv) -----
+  // Try CSV first if the file looks like one (filename .csv OR starts with a
+  // recognizable header). Columns we care about: Title, Note, URL.
+  if (lowerName.endsWith('.csv') || /^Title\s*,/i.test(text.slice(0, 50))) {
+    const rows = csvRows(text);
+    if (rows.length > 1) {
+      const header = rows[0].map(h => h.trim().toLowerCase());
+      const iTitle = header.indexOf('title');
+      const iNote  = header.indexOf('note');
+      const iUrl   = header.findIndex(h => h === 'url' || h === 'google maps url');
+      const listName = fileName.replace(/\.csv$/i, '').replace(/^.*[\\/]/, '') || 'Saved';
+      for (let r = 1; r < rows.length; r++) {
+        const row = rows[r];
+        const url = iUrl >= 0 ? row[iUrl] : '';
+        const co = coordsFromMapsUrl(url || '');
+        if (!co) continue;
+        pushUnique(out, seen, {
+          lat: co.lat, lng: co.lng,
+          placeName: (iTitle >= 0 ? row[iTitle] : '') || 'Saved place',
+          visitedAt: Date.now(),
+          category: listName,
+          note: iNote >= 0 ? row[iNote] : undefined
+        });
+      }
+      return out;
+    }
+  }
+
+  let json: any;
+  try { json = JSON.parse(text); } catch { return out; }
+
+  // ----- GeoJSON FeatureCollection (Saved Places.json / Reviews.json) -----
+  if (json?.type === 'FeatureCollection' && Array.isArray(json.features)) {
+    const isReviews = /review/i.test(fileName);
+    for (const f of json.features) {
+      const g = f?.geometry;
+      const coords = g?.coordinates;
+      if (!Array.isArray(coords) || coords.length < 2) continue;
+      const lng = Number(coords[0]); const lat = Number(coords[1]);
+      if (!isFinite(lat) || !isFinite(lng)) continue;
+      const props = f.properties || {};
+      const loc = props.location || props.Location || {};
+      const name = props.Title || loc.name || loc.Name || loc.address || loc.Address || props.name || 'Saved place';
+      const rating = Number(props.five_star_rating_published || props.rating || 0) || undefined;
+      const note = props.review_text_published || props.comment || props.Comment || props.note || props.Note || undefined;
+      const dateStr = props.date || props.review_date || props.published || props.Updated || '';
+      const ts = dateStr ? Date.parse(dateStr) : Date.now();
+      pushUnique(out, seen, {
+        lat, lng, placeName: String(name).slice(0, 140),
+        visitedAt: isFinite(ts) ? ts : Date.now(),
+        category: isReviews ? 'Review' : 'Saved',
+        rating, note: note ? String(note).slice(0, 500) : undefined
+      });
+    }
+    if (out.length) return out;
+  }
+
+  // ----- Records.json: { locations: [{ latitudeE7, longitudeE7, timestamp }] } -----
   if (Array.isArray(json?.locations)) {
-    const seen = new Set<string>();
     for (const r of json.locations) {
       if (typeof r.latitudeE7 !== 'number' || typeof r.longitudeE7 !== 'number') continue;
       const lat = r.latitudeE7 / 1e7;
       const lng = r.longitudeE7 / 1e7;
-      const key = lat.toFixed(3) + ',' + lng.toFixed(3);
-      if (seen.has(key)) continue;
-      seen.add(key);
       const ts = r.timestamp ? Date.parse(r.timestamp) : (r.timestampMs ? Number(r.timestampMs) : Date.now());
-      out.push({ lat, lng, placeName: 'Timeline point', visitedAt: ts });
+      pushUnique(out, seen, { lat, lng, placeName: 'Timeline point', visitedAt: ts, category: 'Timeline' });
     }
     return out;
   }
 
-  // Semantic Location History: { timelineObjects: [{ placeVisit: { location, duration } }] }
+  // ----- Semantic Location History: { timelineObjects: [{ placeVisit }] } -----
   if (Array.isArray(json?.timelineObjects)) {
     for (const o of json.timelineObjects) {
       const pv = o.placeVisit;
@@ -359,22 +476,20 @@ export function parseGoogleTimeline(text: string): TimelinePin[] {
       const lng = pv.location.longitudeE7 / 1e7;
       const name = pv.location.name || pv.location.address || 'Visited place';
       const ts = pv.duration?.startTimestamp ? Date.parse(pv.duration.startTimestamp) : Date.now();
-      out.push({ lat, lng, placeName: name, visitedAt: ts });
+      pushUnique(out, seen, { lat, lng, placeName: name, visitedAt: ts, category: 'Timeline' });
     }
     return out;
   }
 
-  // New Timeline.json (2024+): { semanticSegments: [{ visit: { topCandidate: { placeLocation: "geo:lat,lng" } } }] }
+  // ----- New Timeline.json (2024+): { semanticSegments: [{ visit }] } -----
   if (Array.isArray(json?.semanticSegments)) {
     for (const s of json.semanticSegments) {
       const v = s.visit;
-      const loc = v?.topCandidate?.placeLocation || v?.location;
-      if (!loc || typeof loc !== 'string' || !loc.startsWith('geo:')) continue;
-      const [lat, lng] = loc.slice(4).split(',').map(Number);
-      if (!isFinite(lat) || !isFinite(lng)) continue;
+      const co = coordsFromGeoUri(v?.topCandidate?.placeLocation) || coordsFromGeoUri(v?.location);
+      if (!co) continue;
       const name = v?.topCandidate?.semanticType || 'Visited place';
       const ts = s.startTime ? Date.parse(s.startTime) : Date.now();
-      out.push({ lat, lng, placeName: name, visitedAt: ts });
+      pushUnique(out, seen, { lat: co.lat, lng: co.lng, placeName: name, visitedAt: ts, category: 'Timeline' });
     }
     return out;
   }
@@ -391,9 +506,11 @@ export async function importTimelinePins(
     for (const p of pins) {
       list.push({
         uid, displayName,
-        placeName: p.placeName, category: 'Timeline',
-        lat: p.lat, lng: p.lng, visitedAt: p.visitedAt
-      });
+        placeName: p.placeName, category: p.category || 'Timeline',
+        lat: p.lat, lng: p.lng, visitedAt: p.visitedAt,
+        ...(p.rating ? { rating: p.rating } : {}),
+        ...(p.note ? { note: p.note } : {})
+      } as any);
     }
     dset('places', list.slice(0, 5000));
     onProgress?.(pins.length, pins.length);
@@ -408,9 +525,11 @@ export async function importTimelinePins(
       const ref = doc(collection(db!, 'visitedPlaces'));
       batch.set(ref, {
         uid, displayName,
-        placeName: p.placeName, category: 'Timeline',
+        placeName: p.placeName, category: p.category || 'Timeline',
         lat: p.lat, lng: p.lng,
-        visitedAt: new Date(p.visitedAt)
+        visitedAt: new Date(p.visitedAt),
+        ...(p.rating ? { rating: p.rating } : {}),
+        ...(p.note ? { note: p.note } : {})
       });
     }
     await batch.commit();
