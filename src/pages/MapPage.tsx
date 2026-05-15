@@ -31,6 +31,9 @@ import {
   HQ_HIT_RADIUS_M, type Missile
 } from '../lib/missiles';
 import { playLaunch, playImpact } from '../lib/sfx';
+import {
+  startHeartbeat, watchActiveUsers, type ActiveUser
+} from '../lib/pulse';
 import { squadPrestige } from '../lib/demoSeed';
 import { getLogo, DEFAULT_LOGO_ID } from '../lib/squadLogos';
 
@@ -138,6 +141,12 @@ export default function MapPage() {
   // don't double-trigger the audio.
   const playedImpactsRef = useRef<Set<string>>(new Set());
 
+  // ——— Member Population Pulse ———
+  // Every signed-in user heartbeats to `activeUsers`; everyone subscribes and
+  // sees the platform-wide live count plus a roster for globe-scanning.
+  const [activeUsers, setActiveUsers] = useState<ActiveUser[]>([]);
+  const [showPulseRoster, setShowPulseRoster] = useState(false);
+
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: GOOGLE_MAPS_KEY,
     id: 'squadren-google-map',
@@ -185,6 +194,18 @@ export default function MapPage() {
 
   // Subscribe to recent missiles so the map can animate arcs in real time.
   useEffect(() => watchRecentMissiles(setMissiles), []);
+  useEffect(() => watchActiveUsers(setActiveUsers), []);
+  // Heartbeat the current user every minute so they show up in the pulse.
+  useEffect(() => {
+    if (!user) return;
+    return startHeartbeat({
+      uid: user.uid,
+      displayName: user.displayName,
+      lat: pos?.lat,
+      lng: pos?.lng,
+      squadCount: squadIds.length
+    });
+  }, [user?.uid, pos?.lat, pos?.lng, squadIds.length]);
   useEffect(() => {
     if (!user) return;
     fetchStats(user.uid).then(s => setMyXp(s.xp || 0)).catch(() => {});
@@ -499,6 +520,30 @@ export default function MapPage() {
             <span className="pill">{publicPins.length} pins</span>
             <span className="pill">{demoSquadList.length} squads</span>
           </div>
+          {/* Member Population Pulse — live count of every Squad REN user
+              whose heartbeat is fresh. Tap to scan the globe for them. */}
+          <button
+            onClick={() => setShowPulseRoster(true)}
+            title="Live Squad REN population — tap to scan the globe"
+            style={{
+              marginTop: 8, width: '100%', cursor: 'pointer', border: 'none',
+              background: 'linear-gradient(135deg,#22c55e,#0ea5e9)',
+              color: '#fff', borderRadius: 10, padding: '8px 10px',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              boxShadow: '0 2px 10px rgba(34,197,94,0.25)'
+            }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{
+                display: 'inline-block', width: 8, height: 8, borderRadius: 999,
+                background: '#fff', boxShadow: '0 0 0 0 #fff',
+                animation: 'pulseDot 1.4s infinite'
+              }} />
+              <strong style={{ fontSize: 14 }}>{activeUsers.length.toLocaleString()}</strong>
+              <span style={{ fontSize: 11, opacity: 0.9 }}>Squadders online</span>
+            </span>
+            <span style={{ fontSize: 11, opacity: 0.9 }}>🌐 Scan →</span>
+          </button>
           <div className="layer-toggle" style={{ marginTop: 8 }}>
             <button className={'chip ' + (layer === 'public' ? 'active' : '')} onClick={() => setLayer('public')}>🌎 Public</button>
             <button className={'chip ' + (layer === 'squad' ? 'active' : '')} onClick={() => setLayer('squad')}>👥 Squad</button>
@@ -961,6 +1006,22 @@ export default function MapPage() {
               />
             );
           })}
+
+          {/* Population Pulse: tiny green dot for every active Squadder with
+              shared coords. Lightweight CircleF (not Marker) so 100s render
+              cheaply. Tap-through is disabled. */}
+          {activeUsers.filter(u => u.uid !== user?.uid && typeof u.lat === 'number' && typeof u.lng === 'number').slice(0, 500).map(u => (
+            <CircleF
+              key={'pulse-' + u.uid}
+              center={{ lat: u.lat!, lng: u.lng! }}
+              radius={12000}
+              options={{
+                fillColor: '#22c55e', fillOpacity: 0.45,
+                strokeColor: '#16a34a', strokeOpacity: 0.9, strokeWeight: 1,
+                clickable: false
+              }}
+            />
+          ))}
         </GoogleMap>
       )}
 
@@ -1055,6 +1116,86 @@ export default function MapPage() {
           setShowTutorial(false);
         }} />
       )}
+
+      {showPulseRoster && (
+        <PulseRoster
+          users={activeUsers}
+          myUid={user?.uid || ''}
+          onClose={() => setShowPulseRoster(false)}
+          onFlyTo={(u) => {
+            const m = mapRef.current;
+            if (m && typeof u.lat === 'number' && typeof u.lng === 'number') {
+              m.panTo({ lat: u.lat, lng: u.lng });
+              m.setZoom(10);
+            }
+            setShowPulseRoster(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Roster overlay: scrollable list of every active Squadder. Tapping one with
+// shared coords flies the map to them so squads can scan for rivals/recruits.
+function PulseRoster({ users, myUid, onClose, onFlyTo }: {
+  users: ActiveUser[];
+  myUid: string;
+  onClose: () => void;
+  onFlyTo: (u: ActiveUser) => void;
+}) {
+  const others = users.filter(u => u.uid !== myUid);
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460, maxHeight: '85vh', overflow: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <h2 style={{ margin: 0 }}>🌐 Population Pulse</h2>
+          <button onClick={onClose} aria-label="Close"
+            style={{ background: '#eee', border: 'none', borderRadius: 999, width: 32, height: 32, cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <div style={{ flex: 1, padding: 10, borderRadius: 10, background: 'linear-gradient(135deg,#22c55e,#0ea5e9)', color: '#fff', textAlign: 'center' }}>
+            <div style={{ fontSize: 24, fontWeight: 900 }}>{users.length.toLocaleString()}</div>
+            <div style={{ fontSize: 11, opacity: 0.9 }}>online now</div>
+          </div>
+          <div style={{ flex: 1, padding: 10, borderRadius: 10, background: '#f1f5f9', textAlign: 'center' }}>
+            <div style={{ fontSize: 24, fontWeight: 900, color: '#0f172a' }}>
+              {users.filter(u => typeof u.lat === 'number').length.toLocaleString()}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--muted)' }}>on the globe</div>
+          </div>
+        </div>
+        <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>
+          Anyone using Squad REN right now. Tap a member to fly your map to them —
+          good for sizing up rivals before a squad battle, or scouting recruits.
+        </p>
+        <div style={{ marginTop: 8 }}>
+          {others.length === 0 && (
+            <div className="empty">No one else online right now. Be the first scout.</div>
+          )}
+          {others.slice(0, 200).map(u => {
+            const hasLoc = typeof u.lat === 'number' && typeof u.lng === 'number';
+            const ageS = Math.max(0, Math.round((Date.now() - u.lastSeenMs) / 1000));
+            return (
+              <button key={u.uid} onClick={() => hasLoc && onFlyTo(u)} disabled={!hasLoc}
+                style={{
+                  width: '100%', textAlign: 'left', marginTop: 6, padding: 8, borderRadius: 10,
+                  border: '1px solid #e5e7eb', background: '#fff', cursor: hasLoc ? 'pointer' : 'default',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8
+                }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                  <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 999, background: '#22c55e', flexShrink: 0 }} />
+                  <strong style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.displayName}</strong>
+                  {(u.squadCount ?? 0) > 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {u.squadCount} 👥</span>}
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>
+                  {hasLoc ? '🗺️ fly' : '— no loc'} · {ageS < 60 ? `${ageS}s` : `${Math.round(ageS / 60)}m`}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
