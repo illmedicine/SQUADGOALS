@@ -24,7 +24,13 @@ import {
   findReachedStop, PATH_MIN_M, PATH_MIN_MS, type Trip
 } from '../lib/trips';
 import { haversine } from '../lib/geo';
-import { TIERS } from '../lib/prestige';
+import { TIERS, fetchStats } from '../lib/prestige';
+import {
+  watchRecentMissiles, fireMissile, getAmmo,
+  missileStyleForTier, rangeKmForTier, trailPath, projectilePos,
+  HQ_HIT_RADIUS_M, type Missile
+} from '../lib/missiles';
+import { playLaunch, playImpact } from '../lib/sfx';
 import { squadPrestige } from '../lib/demoSeed';
 import { getLogo, DEFAULT_LOGO_ID } from '../lib/squadLogos';
 
@@ -115,6 +121,23 @@ export default function MapPage() {
   // Memoize the PlacesService so we don't recreate it on every effect tick.
   const placesSvcRef = useRef<google.maps.places.PlacesService | null>(null);
 
+  // ——— Virtual warfare ———
+  // Active + recent missiles for the animated arcs and impact markers.
+  const [missiles, setMissiles] = useState<Missile[]>([]);
+  // Arm mode: when on, the next map click fires a missile at that point.
+  const [armed, setArmed] = useState(false);
+  // Used by setInterval to drive the per-frame polyline redraw while any
+  // missile is in-flight.
+  const [animTick, setAnimTick] = useState(0);
+  // The attacker's own stats drive their tier-based ammo capacity.
+  const [myXp, setMyXp] = useState(0);
+  // Impact splash markers — added on impact, removed after 4s. Keeps render
+  // overhead bounded since `missiles` itself rolls forward on its own.
+  const [impacts, setImpacts] = useState<{ id: string; lat: number; lng: number; tier: number; t: number }[]>([]);
+  // Track which missiles we have already played the boom for, so re-renders
+  // don't double-trigger the audio.
+  const playedImpactsRef = useRef<Set<string>>(new Set());
+
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: GOOGLE_MAPS_KEY,
     id: 'squadren-google-map',
@@ -159,6 +182,48 @@ export default function MapPage() {
   // Currently-running trip we own. The map records GPS breadcrumbs to this
   // trip's path and detects stop arrivals.
   const myActiveTrip = useMemo(() => myTrips.find(t => t.status === 'active') || null, [myTrips]);
+
+  // Subscribe to recent missiles so the map can animate arcs in real time.
+  useEffect(() => watchRecentMissiles(setMissiles), []);
+  useEffect(() => {
+    if (!user) return;
+    fetchStats(user.uid).then(s => setMyXp(s.xp || 0)).catch(() => {});
+  }, [user?.uid]);
+
+  // Drive the in-flight animation. Runs only while at least one missile is
+  // still mid-air. Triggers state on a 16 → 60 fps loop via setInterval.
+  useEffect(() => {
+    const now = Date.now();
+    const anyInFlight = missiles.some(m => m.status === 'in_flight' && m.impactAt > now);
+    if (!anyInFlight) return;
+    const id = window.setInterval(() => setAnimTick(t => t + 1), 60);
+    return () => clearInterval(id);
+  }, [missiles]);
+
+  // Detect impacts client-side so we can play the boom + flash a splash
+  // marker the moment any missile crosses its impactAt threshold.
+  useEffect(() => {
+    const now = Date.now();
+    for (const m of missiles) {
+      if (m.impactAt <= now && !playedImpactsRef.current.has(m.id)) {
+        playedImpactsRef.current.add(m.id);
+        playImpact();
+        setImpacts(prev => [...prev, { id: m.id, lat: m.target.lat, lng: m.target.lng, tier: m.missileTier, t: now }]);
+        // Apply RP damage to fellow squad-mates of the *current viewer*
+        // when this user is in the targeted squad (everyone's client tries
+        // — the awardXp transaction is idempotent enough for the prototype).
+        if (user && m.targetSquadId && m.rpDamage > 0) {
+          const inSquad = squads.find(s => s.id === m.targetSquadId);
+          if (inSquad && inSquad.members.includes(user.uid)) {
+            awardXp(user.uid, { xp: -m.rpDamage }).catch(() => {});
+          }
+        }
+        // Garbage-collect the splash after 4s.
+        const idToRemove = m.id;
+        setTimeout(() => setImpacts(prev => prev.filter(x => x.id !== idToRemove)), 4000);
+      }
+    }
+  }, [missiles, animTick]);
 
   useEffect(() => {
     if (!user || !pos) return;
@@ -235,6 +300,90 @@ export default function MapPage() {
   const center = initialCenter.current || { lat: 37.7749, lng: -122.4194 };
   const myAvatar = user?.avatar || defaultAvatar;
   const meIconUrl = useMemo(() => avatarToDataUrl(myAvatar), [JSON.stringify(myAvatar)]);
+
+  // ——— Virtual warfare: the squad we'll fire from + ammo state ———
+  // Use the first real squad with an HQ as the launching base; fall back to
+  // the first squad outright (origin becomes its leader's HQ or the user's
+  // current GPS if neither is set).
+  const firingSquad = useMemo(() => squads.find(s => !!s.hq) || squads[0] || null, [squads]);
+  const myTierObj = useMemo(() => {
+    let t = TIERS[0];
+    for (const cur of TIERS) if (myXp >= cur.xp) t = cur;
+    return t;
+  }, [myXp]);
+  const ammo = firingSquad ? getAmmo(firingSquad.id, myXp) : null;
+
+  async function fireAtTarget(target: { lat: number; lng: number; placeName?: string }) {
+    if (!user || !firingSquad) {
+      setImportMsg('Join or create a squad before launching missiles.');
+      setTimeout(() => setImportMsg(null), 3000);
+      return;
+    }
+    if (!ammo || ammo.remaining <= 0) {
+      setImportMsg(`Out of ammo — tier ${myTierObj.tier} squads get ${ammo?.capacity ?? 1} missile(s) per day.`);
+      setTimeout(() => setImportMsg(null), 3500);
+      return;
+    }
+    // Origin: squad HQ if set, otherwise the launcher's GPS, otherwise center.
+    const origin = firingSquad.hq
+      ? { lat: firingSquad.hq.lat, lng: firingSquad.hq.lng }
+      : (pos || center);
+
+    // Did the click land on another squad's HQ? Look at public squads + my squads.
+    let targetSquadId: string | undefined;
+    let targetSquadName: string | undefined;
+    let targetMemberIds: string[] = [];
+    const candidates = [...publicSquads, ...squads].filter(s => s.hq && s.id !== firingSquad.id);
+    for (const s of candidates) {
+      if (!s.hq) continue;
+      const d = haversine({ lat: s.hq.lat, lng: s.hq.lng }, target);
+      if (d <= HQ_HIT_RADIUS_M) {
+        targetSquadId = s.id;
+        targetSquadName = s.name;
+        targetMemberIds = s.members || [];
+        break;
+      }
+    }
+    try {
+      playLaunch();
+      await fireMissile({
+        attackerSquadId: firingSquad.id,
+        attackerSquadName: firingSquad.name,
+        attackerSquadTier: myTierObj.tier,
+        attackerUid: user.uid,
+        attackerName: user.displayName,
+        origin,
+        target,
+        targetSquadId,
+        targetSquadName,
+        targetMemberIds
+      });
+      setImportMsg(targetSquadName
+        ? `🚀 Strike inbound on ${targetSquadName}!`
+        : '🚀 Missile away!');
+      setTimeout(() => setImportMsg(null), 3500);
+    } catch (e: any) {
+      setImportMsg(`⚠ ${e?.message || 'Launch failed.'}`);
+      setTimeout(() => setImportMsg(null), 3500);
+    }
+  }
+
+  // Retaliate against the most recent attacker hit on one of my squads.
+  async function retaliate(m: Missile) {
+    if (!firingSquad || !firingSquad.hq) {
+      setImportMsg('Set a squad HQ to retaliate from.');
+      setTimeout(() => setImportMsg(null), 3000);
+      return;
+    }
+    // Find attacker squad HQ via squads + publicSquads.
+    const all = [...publicSquads, ...squads];
+    const attacker = all.find(s => s.id === m.attackerSquadId);
+    const target = attacker?.hq
+      ? { lat: attacker.hq.lat, lng: attacker.hq.lng, placeName: attacker.name }
+      : { lat: m.origin.lat, lng: m.origin.lng, placeName: m.attackerSquadName };
+    await fireAtTarget(target);
+  }
+
 
   // Heat map points combine live presence + public pins + (when relevant)
   // squad check-ins. Only generated after the maps API is ready because
@@ -410,6 +559,18 @@ export default function MapPage() {
             >{checkInBusy ? '⏳ Checking in…' : '📍 Check in here'}</button>
             <button className="chip" onClick={() => fileRef.current?.click()}>📥 Import Maps</button>
             <button className="chip" onClick={() => setShowTutorial(true)} title="How to import Google Timeline">❓ Help</button>
+            <button
+              className={'chip ' + (armed ? 'active' : '')}
+              disabled={!firingSquad || !ammo || ammo.remaining <= 0}
+              title={
+                !firingSquad ? 'Join a squad first' :
+                !ammo || ammo.remaining <= 0 ? 'Out of ammo today' :
+                `Range: ${rangeKmForTier(myTierObj.tier).toLocaleString()} km — click anywhere on the map to fire`
+              }
+              onClick={() => setArmed(a => !a)}
+            >
+              {armed ? '🎯 Pick target…' : `🚀 Arm missile${ammo ? ` (${ammo.remaining}/${ammo.capacity})` : ''}`}
+            </button>
           </div>
           {importing && (
             <div style={{ fontSize: 12, marginTop: 6 }}>Importing… {importing.done}/{importing.total}</div>
@@ -417,6 +578,34 @@ export default function MapPage() {
           {importMsg && (
             <div style={{ fontSize: 12, marginTop: 6, color: 'var(--muted)' }}>{importMsg}</div>
           )}
+          {/* Recent strikes on my squads — one-tap retaliate. */}
+          {(() => {
+            const mySquadIds = new Set(squads.map(s => s.id));
+            const hitsOnMe = missiles
+              .filter(m => m.targetSquadId && mySquadIds.has(m.targetSquadId))
+              .slice(0, 3);
+            if (hitsOnMe.length === 0) return null;
+            return (
+              <div style={{ marginTop: 8, padding: 6, background: '#fef2f2', borderRadius: 8, border: '1px solid #fecaca' }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: '#991b1b' }}>⚠ INCOMING STRIKES</div>
+                {hitsOnMe.map(m => (
+                  <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 12 }}>
+                    <span style={{ flex: 1, color: '#7f1d1d' }}>
+                      <strong>{m.attackerSquadName}</strong> → {m.targetSquadName}
+                      {m.status === 'in_flight' ? ' (incoming)' : ` (-${m.rpDamage} RP)`}
+                    </span>
+                    <button
+                      onClick={() => retaliate(m)}
+                      disabled={!firingSquad || !ammo || ammo.remaining <= 0}
+                      style={{
+                        background: '#ef4444', color: '#fff', border: 'none', borderRadius: 999,
+                        padding: '2px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer'
+                      }}>🚀 Retaliate</button>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
           <input ref={fileRef} type="file" multiple accept=".json,.csv,application/json,text/csv" style={{ display: 'none' }} onChange={onTimelineFile} />
         </div>
         <div className="share-stack">
@@ -451,7 +640,7 @@ export default function MapPage() {
           options={{
             styles: mapStyles, disableDefaultUI: true, zoomControl: true,
             clickableIcons: false, gestureHandling: 'greedy',
-            draggableCursor: (dropMode || setHqId) ? 'crosshair' : undefined
+            draggableCursor: (dropMode || setHqId || armed) ? 'crosshair' : undefined
           }}
           onLoad={m => {
             mapRef.current = m;
@@ -474,6 +663,12 @@ export default function MapPage() {
           }}
           onClick={e => {
             if (!e.latLng) return;
+            if (armed) {
+              const lat = e.latLng.lat(), lng = e.latLng.lng();
+              setArmed(false);
+              fireAtTarget({ lat, lng });
+              return;
+            }
             if (setHqId) {
               setHqDropPos({ lat: e.latLng.lat(), lng: e.latLng.lng() });
               return;
@@ -689,6 +884,81 @@ export default function MapPage() {
                   />
                 )}
               </Fragment>
+            );
+          })}
+
+          {/* Virtual warfare — animated missile arcs + impact splashes. */}
+          {missiles.map(m => {
+            const style = missileStyleForTier(m.missileTier);
+            const inFlight = m.status === 'in_flight' && m.impactAt > Date.now();
+            const path = inFlight ? trailPath(m) : trailPath(m, m.impactAt);
+            const head = inFlight ? projectilePos(m) : m.target;
+            return (
+              <Fragment key={m.id}>
+                <PolylineF
+                  path={path}
+                  options={{
+                    strokeColor: style.color,
+                    strokeOpacity: inFlight ? 0.95 : 0.5,
+                    strokeWeight: 3,
+                    geodesic: false,
+                    icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 2 }, offset: '0', repeat: '10px' }]
+                  }}
+                />
+                {/* Trail glow */}
+                <PolylineF
+                  path={path}
+                  options={{
+                    strokeColor: style.trail,
+                    strokeOpacity: inFlight ? 0.5 : 0.2,
+                    strokeWeight: 9,
+                    geodesic: false
+                  }}
+                />
+                {/* Origin marker (so the target squad sees where it came from). */}
+                <MarkerF
+                  position={m.origin}
+                  title={`${m.attackerSquadName} launch site`}
+                  icon={{
+                    path: google.maps.SymbolPath.CIRCLE,
+                    scale: 6, fillColor: style.color, fillOpacity: 0.9,
+                    strokeColor: '#fff', strokeWeight: 2
+                  }}
+                  zIndex={700}
+                />
+                {/* Projectile head: emoji label that travels along the arc. */}
+                {inFlight && (
+                  <MarkerF
+                    position={head}
+                    label={{ text: style.emoji, fontSize: '22px' }}
+                    icon={{
+                      // Invisible anchor — we only want the emoji label visible.
+                      path: google.maps.SymbolPath.CIRCLE,
+                      scale: 0.1, fillOpacity: 0, strokeOpacity: 0
+                    } as any}
+                    zIndex={9999}
+                  />
+                )}
+              </Fragment>
+            );
+          })}
+
+          {/* Impact splash circles — pulse out for a moment after impact. */}
+          {impacts.map(i => {
+            const style = missileStyleForTier(i.tier);
+            const age = (Date.now() - i.t) / 4000;  // 0 → 1
+            const radius = 200 + age * 1200;
+            return (
+              <CircleF
+                key={i.id}
+                center={{ lat: i.lat, lng: i.lng }}
+                radius={radius}
+                options={{
+                  fillColor: style.color, fillOpacity: 0.25 * (1 - age),
+                  strokeColor: style.color, strokeOpacity: 0.9 * (1 - age),
+                  strokeWeight: 3, clickable: false
+                }}
+              />
             );
           })}
         </GoogleMap>
