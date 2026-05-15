@@ -90,12 +90,15 @@ VITE_FIREBASE_APP_ID=1:1234567890:web:abcdef
 
 1. Push to `main`. The included workflow (`.github/workflows/deploy.yml`)
    builds and publishes to Pages automatically.
-2. In **Settings → Pages**, set source to **GitHub Actions**.
+2. In **Settings → Pages**, set source to **GitHub Actions** and set the
+   custom domain to `squad-ren.com`. Enable **Enforce HTTPS** once the cert
+   provisions.
 3. Add your `VITE_*` keys under **Settings → Secrets and variables → Actions**.
-4. The site will be served at `https://<user>.github.io/SQUADGOALS/`.
+4. The site is served from `https://squad-ren.com`. A `public/CNAME` file
+   keeps the custom domain pinned through every deploy.
 
-> The Vite `base` is set to `/SQUADGOALS/`. Update `REPO` in `vite.config.ts`
-> if you rename the repository.
+> The Vite `base` is set to `/` for the apex domain. If you ever need to
+> serve from a subpath again, edit `vite.config.ts`.
 
 ## Wrap as Android app (AAB)
 

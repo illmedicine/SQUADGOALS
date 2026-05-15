@@ -2,11 +2,10 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
-// GitHub Pages serves the site under /<repo>/ — adjust if repo name changes.
-const REPO = 'SQUADGOALS';
-
-export default defineConfig(({ command }) => ({
-  base: command === 'build' ? `/${REPO}/` : '/',
+// Apex domain (squad-ren.com) serves the app from root. The legacy
+// /SQUADGOALS/ GitHub Pages path is no longer used once the CNAME flips DNS.
+export default defineConfig(() => ({
+  base: '/',
   plugins: [
     react(),
     VitePWA({
@@ -15,7 +14,7 @@ export default defineConfig(({ command }) => ({
       // Re-enable workbox precache later once everything is solid.
       injectRegister: false,
       selfDestroying: true,
-      includeAssets: ['logo.png', 'favicon.png', 'icon-192.png', 'icon-512.png', 'favicon.svg'],
+      includeAssets: ['logo.png', 'favicon.png', 'icon-192.png', 'icon-512.png', 'favicon.svg', 'CNAME'],
       manifest: {
         name: 'Squad REN',
         short_name: 'SquadREN',
@@ -24,8 +23,8 @@ export default defineConfig(({ command }) => ({
         background_color: '#0b0b14',
         display: 'standalone',
         orientation: 'portrait',
-        start_url: `/${REPO}/`,
-        scope: `/${REPO}/`,
+        start_url: '/',
+        scope: '/',
         icons: [
           { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
           { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
