@@ -62,25 +62,26 @@ function newId() { return 'trip-' + Date.now() + '-' + Math.floor(Math.random() 
 // ---------- CRUD ----------
 
 export async function createTrip(t: Omit<Trip, 'id' | 'createdAt' | 'updatedAt' | 'status'> & { status?: TripStatus }): Promise<Trip> {
-  const trip: Trip = {
+  const base = {
     ...t,
-    id: newId(),
     status: t.status || 'planned',
-    path: t.path || [],
-    createdAt: Date.now(),
-    updatedAt: Date.now()
+    path: t.path || []
   };
   if (demo) {
+    const trip: Trip = { ...base, id: newId(), createdAt: Date.now(), updatedAt: Date.now() };
     const list = dget<Trip[]>('trips', []);
     list.unshift(trip); dset('trips', list);
     return trip;
   }
+  // IMPORTANT: do not write a synthetic `id` field into the document. The
+  // real id is the Firestore doc ref; storing a fake id inside the body
+  // would shadow it during reads and break later updateDoc/deleteDoc calls.
   const ref = await addDoc(collection(db!, 'trips'), {
-    ...trip,
+    ...base,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   });
-  return { ...trip, id: ref.id };
+  return { ...base, id: ref.id, createdAt: Date.now(), updatedAt: Date.now() } as Trip;
 }
 
 export async function updateTrip(id: string, patch: Partial<Trip>) {
@@ -157,7 +158,7 @@ export function watchMyTrips(uid: string, cb: (trips: Trip[]) => void) {
     return () => clearInterval(id);
   }
   const q = query(collection(db!, 'trips'), where('ownerId', '==', uid));
-  return onSnapshot(q, snap => cb(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as Trip[]));
+  return onSnapshot(q, snap => cb(snap.docs.map(d => ({ ...(d.data() as any), id: d.id })) as Trip[]));
 }
 
 // Trips you can see live: anything from a squad you're in (visibility 'squad' or 'public')
@@ -182,7 +183,7 @@ export function watchSquadTrips(squadIds: string[], cb: (trips: Trip[]) => void)
     const q = query(collection(db!, 'trips'),
       where('status', '==', 'active'),
       where('visibility', '==', 'public'));
-    return onSnapshot(q, snap => cb(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as Trip[]));
+    return onSnapshot(q, snap => cb(snap.docs.map(d => ({ ...(d.data() as any), id: d.id })) as Trip[]));
   }
   // Two parallel queries (public + squad) merged client-side.
   let publicTrips: Trip[] = []; let squadTrips: Trip[] = [];
@@ -197,8 +198,8 @@ export function watchSquadTrips(squadIds: string[], cb: (trips: Trip[]) => void)
   const qSq = query(collection(db!, 'trips'),
     where('status', '==', 'active'),
     where('squadIds', 'array-contains-any', squadIds.slice(0, 30)));
-  const u1 = onSnapshot(qPub, snap => { publicTrips = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as Trip[]; emit(); });
-  const u2 = onSnapshot(qSq, snap => { squadTrips = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as Trip[]; emit(); });
+  const u1 = onSnapshot(qPub, snap => { publicTrips = snap.docs.map(d => ({ ...(d.data() as any), id: d.id })) as Trip[]; emit(); });
+  const u2 = onSnapshot(qSq, snap => { squadTrips = snap.docs.map(d => ({ ...(d.data() as any), id: d.id })) as Trip[]; emit(); });
   return () => { u1(); u2(); };
 }
 
