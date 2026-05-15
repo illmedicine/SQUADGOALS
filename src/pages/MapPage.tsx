@@ -34,6 +34,7 @@ import { playLaunch, playImpact } from '../lib/sfx';
 import {
   startHeartbeat, watchActiveUsers, type ActiveUser
 } from '../lib/pulse';
+import { sendStrikeEmails, emailsForUids, compressImage } from '../lib/mailer';
 import { squadPrestige } from '../lib/demoSeed';
 import { getLogo, DEFAULT_LOGO_ID } from '../lib/squadLogos';
 
@@ -366,7 +367,21 @@ export default function MapPage() {
   }, [myXp]);
   const ammo = firingSquad ? getAmmo(firingSquad.id, myXp) : null;
 
-  async function fireAtTarget(target: { lat: number; lng: number; placeName?: string }) {
+  // Strike composer state. When the user taps the map while armed we collect
+  // a message + optional image before actually firing, so the email blasted
+  // to the recipient squad has something fun in it.
+  const [composeTarget, setComposeTarget] = useState<{
+    lat: number; lng: number; placeName?: string;
+    targetSquadId?: string; targetSquadName?: string; targetMemberIds?: string[];
+  } | null>(null);
+  const [composeMsg, setComposeMsg] = useState('');
+  const [composeImg, setComposeImg] = useState<string | null>(null);
+  const [composeBusy, setComposeBusy] = useState(false);
+  const composeFileRef = useRef<HTMLInputElement>(null);
+
+  // First-stage handler: validates ammo + range, detects rival HQ, opens the
+  // composer. Actual firing happens in executeFire below.
+  function fireAtTarget(target: { lat: number; lng: number; placeName?: string }) {
     if (!user || !firingSquad) {
       setImportMsg('Join or create a squad before launching missiles.');
       setTimeout(() => setImportMsg(null), 3000);
@@ -377,11 +392,6 @@ export default function MapPage() {
       setTimeout(() => setImportMsg(null), 3500);
       return;
     }
-    // Origin: squad HQ if set, otherwise the launcher's GPS, otherwise center.
-    const origin = firingSquad.hq
-      ? { lat: firingSquad.hq.lat, lng: firingSquad.hq.lng }
-      : (pos || center);
-
     // Did the click land on another squad's HQ? Look at public squads + my squads.
     let targetSquadId: string | undefined;
     let targetSquadName: string | undefined;
@@ -397,7 +407,21 @@ export default function MapPage() {
         break;
       }
     }
+    setComposeMsg('');
+    setComposeImg(null);
+    setComposeTarget({ ...target, targetSquadId, targetSquadName, targetMemberIds });
+  }
+
+  // Second stage: actually fire + (if hitting a real squad) email every
+  // member. The email contains the composer message + the image inline so
+  // offline recipients still see the strike.
+  async function executeFire(opts: { skipCompose?: boolean } = {}) {
+    if (!composeTarget || !user || !firingSquad) return;
+    setComposeBusy(true);
     try {
+      const origin = firingSquad.hq
+        ? { lat: firingSquad.hq.lat, lng: firingSquad.hq.lng }
+        : (pos || center);
       playLaunch();
       await fireMissile({
         attackerSquadId: firingSquad.id,
@@ -405,19 +429,59 @@ export default function MapPage() {
         attackerSquadTier: myTierObj.tier,
         attackerUid: user.uid,
         attackerName: user.displayName,
+        attackerEmail: user.email || null,
         origin,
-        target,
-        targetSquadId,
-        targetSquadName,
-        targetMemberIds
+        target: { lat: composeTarget.lat, lng: composeTarget.lng, placeName: composeTarget.placeName },
+        targetSquadId: composeTarget.targetSquadId,
+        targetSquadName: composeTarget.targetSquadName,
+        targetMemberIds: composeTarget.targetMemberIds,
+        message: opts.skipCompose ? undefined : (composeMsg.trim() || undefined),
+        imageDataUrl: opts.skipCompose ? undefined : (composeImg || undefined)
       });
-      setImportMsg(targetSquadName
-        ? `🚀 Strike inbound on ${targetSquadName}!`
+      // Email every squad-mate of the target. Looks up gmail addresses from
+      // their `users/{uid}` doc — anyone without one is silently skipped.
+      if (composeTarget.targetSquadId && (composeTarget.targetMemberIds?.length || 0) > 0) {
+        const emails = await emailsForUids(composeTarget.targetMemberIds || []);
+        if (emails.length > 0) {
+          await sendStrikeEmails({
+            toEmails: emails,
+            fromName: user.displayName || 'A rival squad',
+            fromEmail: user.email || undefined,
+            attackerSquadName: firingSquad.name,
+            targetSquadName: composeTarget.targetSquadName,
+            targetPlace: composeTarget.placeName,
+            message: composeMsg.trim() || undefined,
+            imageDataUrl: composeImg || undefined,
+            retaliateUrl: 'https://squad-ren.com/'
+          });
+        }
+      }
+      setImportMsg(composeTarget.targetSquadName
+        ? `🚀 Strike inbound on ${composeTarget.targetSquadName}!`
         : '🚀 Missile away!');
       setTimeout(() => setImportMsg(null), 3500);
+      setComposeTarget(null);
+      setComposeMsg('');
+      setComposeImg(null);
     } catch (e: any) {
       setImportMsg(`⚠ ${e?.message || 'Launch failed.'}`);
       setTimeout(() => setImportMsg(null), 3500);
+    } finally {
+      setComposeBusy(false);
+    }
+  }
+
+  async function onComposeImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    try {
+      const url = await compressImage(f);
+      setComposeImg(url);
+    } catch (err: any) {
+      setImportMsg(`⚠ ${err?.message || 'Image failed to load.'}`);
+      setTimeout(() => setImportMsg(null), 3500);
+    } finally {
+      e.target.value = '';
     }
   }
 
@@ -434,7 +498,7 @@ export default function MapPage() {
     const target = attacker?.hq
       ? { lat: attacker.hq.lat, lng: attacker.hq.lng, placeName: attacker.name }
       : { lat: m.origin.lat, lng: m.origin.lng, placeName: m.attackerSquadName };
-    await fireAtTarget(target);
+    fireAtTarget(target);
   }
 
 
@@ -666,18 +730,29 @@ export default function MapPage() {
               <div style={{ marginTop: 8, padding: 6, background: '#fef2f2', borderRadius: 8, border: '1px solid #fecaca' }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: '#991b1b' }}>⚠ INCOMING STRIKES</div>
                 {hitsOnMe.map(m => (
-                  <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 12 }}>
-                    <span style={{ flex: 1, color: '#7f1d1d' }}>
-                      <strong>{m.attackerSquadName}</strong> → {m.targetSquadName}
-                      {m.status === 'in_flight' ? ' (incoming)' : ` (-${m.rpDamage} RP)`}
-                    </span>
-                    <button
-                      onClick={() => retaliate(m)}
-                      disabled={!firingSquad || !ammo || ammo.remaining <= 0}
-                      style={{
-                        background: '#ef4444', color: '#fff', border: 'none', borderRadius: 999,
-                        padding: '2px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer'
-                      }}>🚀 Retaliate</button>
+                  <div key={m.id} style={{ marginTop: 4, fontSize: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ flex: 1, color: '#7f1d1d' }}>
+                        <strong>{m.attackerSquadName}</strong> → {m.targetSquadName}
+                        {m.status === 'in_flight' ? ' (incoming)' : ` (-${m.rpDamage} RP)`}
+                      </span>
+                      <button
+                        onClick={() => retaliate(m)}
+                        disabled={!firingSquad || !ammo || ammo.remaining <= 0}
+                        style={{
+                          background: '#ef4444', color: '#fff', border: 'none', borderRadius: 999,
+                          padding: '2px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer'
+                        }}>🚀 Retaliate</button>
+                    </div>
+                    {m.message && (
+                      <div style={{ marginTop: 4, padding: 6, borderRadius: 6, background: '#fff', color: '#374151', fontSize: 12, whiteSpace: 'pre-wrap' }}>
+                        💬 {m.message}
+                      </div>
+                    )}
+                    {m.imageDataUrl && (
+                      <img src={m.imageDataUrl} alt="strike payload"
+                        style={{ marginTop: 4, width: '100%', maxHeight: 120, objectFit: 'cover', borderRadius: 6 }} />
+                    )}
                   </div>
                 ))}
               </div>
@@ -1163,6 +1238,68 @@ export default function MapPage() {
             setShowPulseRoster(false);
           }}
         />
+      )}
+
+      {composeTarget && (
+        <div className="modal-backdrop" onClick={() => !composeBusy && setComposeTarget(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h2 style={{ margin: 0 }}>🚀 Arm the strike</h2>
+              <button onClick={() => !composeBusy && setComposeTarget(null)} aria-label="Close"
+                style={{ background: '#eee', border: 'none', borderRadius: 999, width: 32, height: 32, cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
+            </div>
+            <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>
+              {composeTarget.targetSquadName
+                ? <>Direct hit on <strong>{composeTarget.targetSquadName}</strong> — every member will get an email with your message + image.</>
+                : <>Striking an open coordinate{composeTarget.placeName ? <> near <strong>{composeTarget.placeName}</strong></> : ''}. No email is sent for blank-map strikes.</>}
+            </p>
+            <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>Message (optional)</label>
+            <textarea
+              value={composeMsg}
+              onChange={e => setComposeMsg(e.target.value.slice(0, 600))}
+              placeholder="Trash talk, love note, peace offering — your call."
+              className="input"
+              rows={4}
+              style={{ width: '100%', marginTop: 4, resize: 'vertical' }}
+            />
+            <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'right' }}>{composeMsg.length}/600</div>
+
+            <div style={{ marginTop: 8 }}>
+              <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>Image (optional)</label>
+              <input
+                type="file"
+                accept="image/*"
+                ref={composeFileRef}
+                onChange={onComposeImageChange}
+                style={{ display: 'none' }}
+              />
+              {!composeImg ? (
+                <button className="btn ghost" onClick={() => composeFileRef.current?.click()} style={{ width: '100%', marginTop: 4 }}>
+                  📷 Attach image
+                </button>
+              ) : (
+                <div style={{ marginTop: 4, position: 'relative' }}>
+                  <img src={composeImg} alt="strike payload"
+                    style={{ width: '100%', borderRadius: 10, border: '1px solid #e5e7eb', maxHeight: 220, objectFit: 'cover' }} />
+                  <button onClick={() => setComposeImg(null)}
+                    style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none', borderRadius: 999, width: 28, height: 28, cursor: 'pointer' }}>×</button>
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+              <button className="btn ghost" onClick={() => setComposeTarget(null)} disabled={composeBusy} style={{ flex: 1 }}>
+                Cancel
+              </button>
+              <button className="btn" onClick={() => executeFire()} disabled={composeBusy} style={{ flex: 2 }}>
+                {composeBusy ? 'Launching…' : '🚀 Launch missile'}
+              </button>
+            </div>
+            <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8, textAlign: 'center' }}>
+              Ammo left after launch: {Math.max(0, (ammo?.remaining || 1) - 1)} / {ammo?.capacity ?? 1}
+            </p>
+          </div>
+        </div>
       )}
     </div>
   );

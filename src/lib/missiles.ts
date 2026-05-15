@@ -31,6 +31,10 @@ export type Missile = {
   impactAt: number;             // launchedAt + flightDurationMs
   // RP deducted from the target squad on impact (negative xp).
   rpDamage: number;
+  // Optional payload attached by the firer for trash-talk / love-notes / memes.
+  message?: string;
+  imageDataUrl?: string;        // base64 jpeg, capped ~700KB by composer
+  attackerEmail?: string;       // so notified recipients can reply
 };
 
 // Squad HQ counts as "hit" if missile lands within this many meters.
@@ -123,6 +127,9 @@ export type FirePayload = {
   targetSquadId?: string;
   targetSquadName?: string;
   targetMemberIds?: string[];    // for retaliation RP penalty distribution
+  message?: string;
+  imageDataUrl?: string;
+  attackerEmail?: string | null;
 };
 
 export async function fireMissile(p: FirePayload): Promise<Missile> {
@@ -146,7 +153,10 @@ export async function fireMissile(p: FirePayload): Promise<Missile> {
     status: 'in_flight',
     launchedAt: now,
     impactAt: now + dur,
-    rpDamage: p.targetSquadId ? BASE_RP_DAMAGE + p.attackerSquadTier * 3 : 0
+    rpDamage: p.targetSquadId ? BASE_RP_DAMAGE + p.attackerSquadTier * 3 : 0,
+    ...(p.message ? { message: p.message } : {}),
+    ...(p.imageDataUrl ? { imageDataUrl: p.imageDataUrl } : {}),
+    ...(p.attackerEmail ? { attackerEmail: p.attackerEmail } : {})
   };
   bumpAmmo(p.attackerSquadId);
 
