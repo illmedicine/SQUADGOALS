@@ -1,12 +1,18 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { GoogleMap, useJsApiLoader, MarkerF } from '@react-google-maps/api';
 import { useAuth } from '../lib/AuthContext';
+import { useLocation } from '../lib/useLocation';
 import { watchUserSquads, type Squad } from '../lib/data';
 import {
   watchMyTrips, createTrip, startTrip, completeTrip, deleteTrip, updateTrip,
   pathDistanceKm, type Trip, type TripStop, type TripVisibility
 } from '../lib/trips';
 import { awardXp, XP } from '../lib/prestige';
+
+const GOOGLE_MAPS_KEY = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string) || '';
+// Match the loader id used by MapPage so we don't double-load the SDK.
+const MAP_LIBS: ('places')[] = ['places'];
 
 function fmtDate(t: any): string {
   if (!t) return '';
@@ -78,16 +84,16 @@ export default function TripsPage() {
           squads={squads}
           onClose={() => setShowNew(false)}
           onCreate={async (draft) => {
-            await createTrip({
-              ownerId: user.uid,
-              ownerName: user.displayName,
-              title: draft.title,
-              stops: draft.stops,
-              visibility: draft.visibility,
-              squadIds: draft.squadIds
-            });
-            setShowNew(false);
-          }}
+          await createTrip({
+            ownerId: user.uid,
+            ownerName: user.displayName,
+            title: draft.title,
+            stops: draft.stops,
+            visibility: draft.visibility,
+            squadIds: draft.squadIds
+          });
+          setShowNew(false);
+        }}
         />
       )}
     </div>
@@ -182,7 +188,7 @@ type Draft = {
 function NewTripModal({ squads, onClose, onCreate }: {
   squads: Squad[];
   onClose: () => void;
-  onCreate: (d: Draft) => void;
+  onCreate: (d: Draft) => Promise<void> | void;
 }) {
   const [title, setTitle] = useState('');
   const [visibility, setVisibility] = useState<TripVisibility>('squad');
@@ -190,6 +196,17 @@ function NewTripModal({ squads, onClose, onCreate }: {
   const [stops, setStops] = useState<TripStop[]>([
     { placeName: '', lat: 0, lng: 0 }
   ]);
+  // Which stop is currently being placed via the embedded map (-1 = none).
+  const [pickingIndex, setPickingIndex] = useState<number>(-1);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { pos } = useLocation({ enabled: true });
+
+  const { isLoaded } = useJsApiLoader({
+    googleMapsApiKey: GOOGLE_MAPS_KEY,
+    id: 'squadren-google-map',  // same id as MapPage — shares the loaded SDK
+    libraries: MAP_LIBS
+  });
 
   function updateStop(i: number, patch: Partial<TripStop>) {
     setStops(prev => prev.map((s, idx) => idx === i ? { ...s, ...patch } : s));
@@ -208,13 +225,29 @@ function NewTripModal({ squads, onClose, onCreate }: {
   }
 
   function submit() {
-    if (!canSave()) return;
-    onCreate({
+    if (!canSave() || submitting) return;
+    // Build the payload by hand so we never send `undefined` fields —
+    // Firestore rejects writes that contain undefined values, which was
+    // silently breaking the Create button before.
+    const cleanStops: TripStop[] = stops.map(s => {
+      const stop: TripStop = {
+        placeName: s.placeName.trim(),
+        lat: Number(s.lat),
+        lng: Number(s.lng)
+      };
+      if (s.note && s.note.trim()) stop.note = s.note.trim();
+      return stop;
+    });
+    setSubmitting(true);
+    setError(null);
+    Promise.resolve(onCreate({
       title: title.trim(),
-      stops: stops.map(s => ({ placeName: s.placeName.trim(), lat: Number(s.lat), lng: Number(s.lng), note: s.note })),
+      stops: cleanStops,
       visibility,
       squadIds: visibility === 'squad' ? selectedSquads : []
-    });
+    }))
+      .catch(e => setError(e?.message || 'Could not create trip.'))
+      .finally(() => setSubmitting(false));
   }
 
   return (
@@ -264,28 +297,56 @@ function NewTripModal({ squads, onClose, onCreate }: {
             stop={s}
             index={i}
             canRemove={stops.length > 1}
+            picking={pickingIndex === i}
+            onPick={() => setPickingIndex(pickingIndex === i ? -1 : i)}
+            onUseMyLocation={pos ? () => updateStop(i, { lat: pos.lat, lng: pos.lng }) : undefined}
             onChange={patch => updateStop(i, patch)}
             onRemove={() => removeStop(i)}
           />
         ))}
 
+        {pickingIndex >= 0 && (
+          <MapPicker
+            isLoaded={isLoaded}
+            center={
+              stops[pickingIndex] && (stops[pickingIndex].lat || stops[pickingIndex].lng)
+                ? { lat: stops[pickingIndex].lat, lng: stops[pickingIndex].lng }
+                : pos || { lat: 37.7749, lng: -122.4194 }
+            }
+            markedStops={stops.map((s, i) => ({ lat: s.lat, lng: s.lng, idx: i }))
+              .filter(s => s.lat || s.lng)}
+            activeIndex={pickingIndex}
+            onPick={(lat, lng) => updateStop(pickingIndex, { lat, lng })}
+            onDone={() => setPickingIndex(-1)}
+          />
+        )}
+
         <button type="button" className="btn ghost" style={{ marginTop: 6 }} onClick={addStop}>＋ Add stop</button>
+
+        {error && (
+          <div style={{ color: '#ef4444', fontSize: 12, marginTop: 8 }}>⚠ {error}</div>
+        )}
 
         <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
           <button className="btn secondary" style={{ flex: 1 }} onClick={onClose}>Cancel</button>
-          <button className="btn" style={{ flex: 2 }} disabled={!canSave()} onClick={submit}>Create trip</button>
+          <button className="btn" style={{ flex: 2 }} disabled={!canSave() || submitting} onClick={submit}>
+            {submitting ? 'Creating…' : 'Create trip'}
+          </button>
         </div>
       </div>
     </div>
   );
 }
 
-function StopEditor({ stop, index, canRemove, onChange, onRemove }: {
+function StopEditor({ stop, index, canRemove, picking, onChange, onRemove, onPick, onUseMyLocation }: {
   stop: TripStop;
   index: number;
   canRemove: boolean;
+  picking: boolean;
   onChange: (p: Partial<TripStop>) => void;
   onRemove: () => void;
+  onPick: () => void;
+  onUseMyLocation?: () => void;
 }) {
   const [pasteCoords, setPasteCoords] = useState('');
 
@@ -297,10 +358,12 @@ function StopEditor({ stop, index, canRemove, onChange, onRemove }: {
     }
   }
 
+  const hasCoords = !!(stop.lat || stop.lng);
+
   return (
     <div style={{ padding: 8, border: '1px solid #eee', borderRadius: 10, marginTop: 8, background: '#fafafa' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-        <strong style={{ fontSize: 13 }}>Stop {index + 1}</strong>
+        <strong style={{ fontSize: 13 }}>Stop {index + 1}{hasCoords ? ' ✓' : ''}</strong>
         {canRemove && (
           <button type="button" onClick={onRemove}
             style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>Remove</button>
@@ -308,14 +371,89 @@ function StopEditor({ stop, index, canRemove, onChange, onRemove }: {
       </div>
       <input className="input" placeholder="Place name (e.g. Stumptown Coffee)"
         value={stop.placeName} onChange={e => onChange({ placeName: e.target.value })} />
-      <input className="input" placeholder="Paste 'lat, lng' from Google Maps"
-        value={pasteCoords} onChange={e => applyPaste(e.target.value)} />
-      <div style={{ display: 'flex', gap: 6 }}>
-        <input className="input" type="number" step="0.000001" placeholder="lat"
-          value={stop.lat || ''} onChange={e => onChange({ lat: Number(e.target.value) })} />
-        <input className="input" type="number" step="0.000001" placeholder="lng"
-          value={stop.lng || ''} onChange={e => onChange({ lng: Number(e.target.value) })} />
+
+      <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+        <button type="button"
+          onClick={onPick}
+          style={{
+            flex: 1, padding: '8px 10px', borderRadius: 10, border: 'none', cursor: 'pointer',
+            fontWeight: 700, fontSize: 12,
+            background: picking ? '#0ea5e9' : '#e0f2fe', color: picking ? '#fff' : '#0369a1'
+          }}>
+          {picking ? '✓ Picking on map…' : '🗺️ Pick on map'}
+        </button>
+        {onUseMyLocation && (
+          <button type="button"
+            onClick={onUseMyLocation}
+            style={{
+              flex: 1, padding: '8px 10px', borderRadius: 10, border: 'none', cursor: 'pointer',
+              fontWeight: 700, fontSize: 12, background: '#dcfce7', color: '#166534'
+            }}>📍 Use my location</button>
+        )}
       </div>
+
+      <details style={{ marginTop: 6 }}>
+        <summary style={{ fontSize: 11, color: 'var(--muted)', cursor: 'pointer' }}>
+          Or paste/enter coordinates manually
+        </summary>
+        <input className="input" placeholder="Paste 'lat, lng' from Google Maps"
+          value={pasteCoords} onChange={e => applyPaste(e.target.value)} />
+        <div style={{ display: 'flex', gap: 6 }}>
+          <input className="input" type="number" step="0.000001" placeholder="lat"
+            value={stop.lat || ''} onChange={e => onChange({ lat: Number(e.target.value) })} />
+          <input className="input" type="number" step="0.000001" placeholder="lng"
+            value={stop.lng || ''} onChange={e => onChange({ lng: Number(e.target.value) })} />
+        </div>
+      </details>
+    </div>
+  );
+}
+
+function MapPicker({ isLoaded, center, markedStops, activeIndex, onPick, onDone }: {
+  isLoaded: boolean;
+  center: { lat: number; lng: number };
+  markedStops: { lat: number; lng: number; idx: number }[];
+  activeIndex: number;
+  onPick: (lat: number, lng: number) => void;
+  onDone: () => void;
+}) {
+  const mapRef = useRef<google.maps.Map | null>(null);
+  if (!isLoaded) {
+    return <div style={{ padding: 12, color: 'var(--muted)', fontSize: 12 }}>Loading map…</div>;
+  }
+  return (
+    <div style={{ marginTop: 8, border: '2px solid #0ea5e9', borderRadius: 12, overflow: 'hidden' }}>
+      <div style={{ background: '#0ea5e9', color: '#fff', fontSize: 12, padding: '6px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span>Tap the map to set Stop {activeIndex + 1}</span>
+        <button type="button" onClick={onDone}
+          style={{ background: '#fff', color: '#0369a1', border: 'none', borderRadius: 999, padding: '2px 10px', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>
+          Done
+        </button>
+      </div>
+      <GoogleMap
+        mapContainerStyle={{ width: '100%', height: 260 }}
+        center={center}
+        zoom={center.lat || center.lng ? 14 : 11}
+        options={{ disableDefaultUI: true, zoomControl: true, gestureHandling: 'greedy', clickableIcons: false, draggableCursor: 'crosshair' }}
+        onLoad={m => { mapRef.current = m; }}
+        onClick={e => {
+          if (!e.latLng) return;
+          onPick(e.latLng.lat(), e.latLng.lng());
+        }}
+      >
+        {markedStops.map(s => (
+          <MarkerF key={s.idx} position={{ lat: s.lat, lng: s.lng }}
+            label={{ text: String(s.idx + 1), color: '#fff', fontSize: '11px', fontWeight: '700' }}
+            icon={{
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: 12,
+              fillColor: s.idx === activeIndex ? '#0ea5e9' : '#8b5cf6',
+              fillOpacity: 1,
+              strokeColor: '#fff',
+              strokeWeight: 2
+            }} />
+        ))}
+      </GoogleMap>
     </div>
   );
 }
