@@ -321,7 +321,36 @@ export default function MapPage() {
   // again, so panning around doesn't get yanked back by GPS updates.
   const initialCenter = useRef<{ lat: number; lng: number } | null>(null);
   if (!initialCenter.current && pos) initialCenter.current = pos;
-  const center = initialCenter.current || { lat: 37.7749, lng: -122.4194 };
+  // IP-based coarse fallback for when GPS is slow/denied — so the map at
+  // least opens near the user's region instead of San Francisco.
+  const [ipFallback, setIpFallback] = useState<{ lat: number; lng: number } | null>(null);
+  useEffect(() => {
+    if (initialCenter.current || pos) return;
+    let cancelled = false;
+    // ipapi.co is free + CORS-friendly; falls back silently on any error.
+    fetch('https://ipapi.co/json/').then(r => r.json()).then(d => {
+      if (cancelled) return;
+      if (typeof d?.latitude === 'number' && typeof d?.longitude === 'number') {
+        setIpFallback({ lat: d.latitude, lng: d.longitude });
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  const center = initialCenter.current
+    || pos
+    || ipFallback
+    || { lat: 37.7749, lng: -122.4194 };
+  // Pan the live map once we get a real GPS fix, regardless of where the
+  // initial center landed (IP fallback / SF default).
+  const didPanToGpsRef = useRef(false);
+  useEffect(() => {
+    if (!pos || didPanToGpsRef.current) return;
+    const m = mapRef.current;
+    if (!m) return;
+    m.panTo(pos);
+    m.setZoom(13);
+    didPanToGpsRef.current = true;
+  }, [pos?.lat, pos?.lng]);
   const myAvatar = user?.avatar || defaultAvatar;
   const meIconUrl = useMemo(() => avatarToDataUrl(myAvatar), [JSON.stringify(myAvatar)]);
 
