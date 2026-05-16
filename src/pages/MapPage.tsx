@@ -35,6 +35,7 @@ import { playLaunch, playImpact } from '../lib/sfx';
 import {
   startHeartbeat, watchActiveUsers, type ActiveUser
 } from '../lib/pulse';
+import { watchLifetimeStats, countryCount } from '../lib/lifetimeStats';
 import {
   appendDailyPathPoint, shouldAppendDailyPath, watchMyRecentPaths, watchVisiblePaths,
   setAllRecentVisibility, setDayVisibility, deleteDay, sweepOldPaths,
@@ -181,6 +182,11 @@ export default function MapPage() {
   // sees the platform-wide live count plus a roster for globe-scanning.
   const [activeUsers, setActiveUsers] = useState<ActiveUser[]>([]);
   const [showPulseRoster, setShowPulseRoster] = useState(false);
+  // Lifetime cumulative counter (across all sign-ins ever) + new-join toasts.
+  const [lifetime, setLifetime] = useState<{ totalUsers: number; countries: Record<string, number> }>({ totalUsers: 0, countries: {} });
+  const [joinToasts, setJoinToasts] = useState<{ uid: string; displayName: string; at: number; fresh: boolean }[]>([]);
+  const knownActiveRef = useRef<Set<string>>(new Set());
+  const firstActiveSyncRef = useRef(true);
 
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: GOOGLE_MAPS_KEY,
@@ -254,6 +260,37 @@ export default function MapPage() {
   // Subscribe to recent missiles so the map can animate arcs in real time.
   useEffect(() => watchRecentMissiles(setMissiles), []);
   useEffect(() => watchActiveUsers(setActiveUsers), []);
+  // Lifetime worldwide users counter — drives the marketing pill.
+  useEffect(() => watchLifetimeStats(setLifetime), []);
+  // Diff active users against the last snapshot to fire a brief join toast
+  // whenever someone new appears in the live pulse. The first sync after
+  // mount is suppressed so we don't spam the screen with "X joined" for
+  // every user already online.
+  useEffect(() => {
+    const seen = knownActiveRef.current;
+    const first = firstActiveSyncRef.current;
+    const additions: { uid: string; displayName: string; at: number; fresh: boolean }[] = [];
+    const nextSeen = new Set<string>();
+    for (const u of activeUsers) {
+      nextSeen.add(u.uid);
+      if (!seen.has(u.uid) && u.uid !== user?.uid) {
+        // Distinguish "joined within the last 90s" (fresh) from "we just
+        // started watching" so the toast can lead with the right copy.
+        const fresh = Date.now() - u.lastSeenMs < 90_000;
+        additions.push({ uid: u.uid, displayName: u.displayName, at: Date.now(), fresh });
+      }
+    }
+    knownActiveRef.current = nextSeen;
+    firstActiveSyncRef.current = false;
+    if (first || !additions.length) return;
+    setJoinToasts(prev => [...prev, ...additions].slice(-3));
+    // Auto-expire each toast after 5s.
+    for (const a of additions) {
+      window.setTimeout(() => {
+        setJoinToasts(prev => prev.filter(t => t.uid !== a.uid || t.at !== a.at));
+      }, 5000);
+    }
+  }, [activeUsers, user?.uid]);
   // Heartbeat the current user every minute so they show up in the pulse.
   useEffect(() => {
     if (!user) return;
@@ -683,6 +720,36 @@ export default function MapPage() {
 
   return (
     <div className="map-wrap" style={{ height: 'calc(100dvh - 76px)' }}>
+      {/* Live join-the-platform toasts. Stacks bottom-right, each card
+          auto-dismisses after 5s. Visible to ALL signed-in users so the
+          live community feel is shared globally. */}
+      <div
+        style={{
+          position: 'fixed', right: 12, bottom: 88, zIndex: 1200,
+          display: 'flex', flexDirection: 'column', gap: 8,
+          pointerEvents: 'none', maxWidth: 260
+        }}
+      >
+        {joinToasts.map(t => (
+          <div
+            key={t.uid + ':' + t.at}
+            style={{
+              background: 'linear-gradient(135deg,#8b5cf6,#ec4899)',
+              color: '#fff', borderRadius: 12, padding: '10px 12px',
+              boxShadow: '0 6px 18px rgba(139,92,246,0.35)',
+              animation: 'joinSlideIn 240ms ease-out',
+              display: 'flex', alignItems: 'center', gap: 10,
+              fontSize: 12
+            }}
+          >
+            <span style={{ fontSize: 20 }}>{t.fresh ? '🎉' : '👋'}</span>
+            <span style={{ lineHeight: 1.25 }}>
+              <strong style={{ display: 'block', fontSize: 13 }}>{t.displayName}</strong>
+              <span style={{ opacity: 0.9 }}>{t.fresh ? 'just joined Squad REN' : 'is live on Squad REN'}</span>
+            </span>
+          </div>
+        ))}
+      </div>
       <div className="map-overlay">
         <div className="map-card">
           <div className="row">
@@ -716,6 +783,28 @@ export default function MapPage() {
             </span>
             <span style={{ fontSize: 11, opacity: 0.9 }}>🌐 Scan →</span>
           </button>
+          {/* Lifetime worldwide stats — marketing pill that grows as Squad REN
+              spreads. Sits directly under the live count so users see both
+              the "right now" and the "all-time" momentum. */}
+          <div
+            style={{
+              marginTop: 6, borderRadius: 10, padding: '6px 10px',
+              background: 'linear-gradient(135deg,rgba(139,92,246,0.12),rgba(236,72,153,0.12))',
+              border: '1px solid rgba(139,92,246,0.25)',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              fontSize: 11, color: '#4c1d95'
+            }}
+            title="Total unique Squad REN members who have ever signed in"
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span>🌍</span>
+              <strong style={{ fontSize: 13 }}>{lifetime.totalUsers.toLocaleString()}</strong>
+              <span style={{ opacity: 0.85 }}>worldwide</span>
+            </span>
+            <span style={{ opacity: 0.85 }}>
+              <strong>{countryCount(lifetime)}</strong> countries
+            </span>
+          </div>
           <div className="layer-toggle" style={{ marginTop: 8 }}>
             <button className={'chip ' + (layer === 'public' ? 'active' : '')} onClick={() => setLayer('public')}>🌎 Public</button>
             <button className={'chip ' + (layer === 'squad' ? 'active' : '')} onClick={() => setLayer('squad')}>👥 Squad</button>

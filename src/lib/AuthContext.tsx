@@ -6,6 +6,7 @@ import {
   signOut, User, browserPopupRedirectResolver
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { recordSignIn } from './lifetimeStats';
 import { auth, db, googleProvider, firebaseConfigured } from './firebase';
 
 export type AppUser = {
@@ -68,6 +69,22 @@ const defaultAvatar: AvatarConfig = {
 };
 export { defaultAvatar };
 
+// Best-effort current geolocation for the sign-in counter. Resolves quickly
+// (or with nothing) so it never blocks auth.
+function currentGeo(): Promise<{ lat?: number; lng?: number }> {
+  return new Promise(resolve => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return resolve({});
+    let done = false;
+    const finish = (v: { lat?: number; lng?: number }) => { if (!done) { done = true; resolve(v); } };
+    navigator.geolocation.getCurrentPosition(
+      p => finish({ lat: p.coords.latitude, lng: p.coords.longitude }),
+      () => finish({}),
+      { enableHighAccuracy: false, timeout: 4000, maximumAge: 60_000 }
+    );
+    setTimeout(() => finish({}), 4500);
+  });
+}
+
 type Ctx = {
   user: AppUser | null;
   rawUser: User | null;
@@ -118,6 +135,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const profile = await ensureProfile(u);
         setUser(profile);
+        // Marketing counter: count this uid the first time we ever see them.
+        // Geo is best-effort — we'll just count the user without a country if
+        // location isn't available yet.
+        const geo = await currentGeo();
+        recordSignIn(u.uid, geo);
       } catch (err: any) {
         // Firestore unreachable (e.g. DB not created yet). Fall back to an
         // in-memory profile so the app still loads.
@@ -192,6 +214,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     localStorage.setItem('squadren.demoUser', JSON.stringify(demo));
     setUser(demo);
+    currentGeo().then(geo => recordSignIn(demo.uid, geo));
   }
 
   async function logout() {
