@@ -6,6 +6,7 @@ import { db } from './firebase';
 import { haversine, type LatLng } from './geo';
 import { demoPublicPresence, demoSquads } from './demoSeed';
 import { buffaloDemoPresence, buffaloDemoSquad } from './buffaloDemo';
+import { ctDemoPresence, ctDemoSquad } from './ctDemo';
 import { createPublicPin } from './publicPins';
 
 export type DemoSquad = ReturnType<typeof demoSquads>[number];
@@ -195,7 +196,7 @@ export async function listPublicSquads(): Promise<Squad[]> {
 
 // Live stream of public squads — used by the map to render HQ pins.
 export function watchPublicSquadsLive(cb: (squads: Squad[]) => void) {
-  const showcase = [buffaloDemoSquad() as Squad];
+  const showcase = [buffaloDemoSquad() as Squad, ctDemoSquad() as Squad];
   if (demo) {
     const tick = () => cb([...dget<Squad[]>('squads', []).filter(s => s.visibility === 'public'), ...showcase]);
     tick();
@@ -247,7 +248,7 @@ export function watchPublicPresence(cb: (p: Presence[]) => void, max = 200) {
   // Demo presence is always overlaid so the world map feels alive.
   // Buffalo showcase squad is always included so new users immediately
   // see what an active hyper-local community looks like.
-  const seeded = [...demoPublicPresence(), ...buffaloDemoPresence()];
+  const seeded = [...demoPublicPresence(), ...buffaloDemoPresence(), ...ctDemoPresence()];
   if (demo) {
     const tick = () => {
       const all = dget<Presence[]>('presence', []);

@@ -1677,7 +1677,7 @@ function svgMarker(fill: string, label = ''): google.maps.Icon {
 }
 function squadIcon() { return svgMarker('#ec4899', '●'); }
 function publicPersonIcon(hasStorefront = false) {
-  return svgMarker(hasStorefront ? '#f59e0b' : '#0ea5e9', hasStorefront ? '🛍' : '🌎');
+  return svgMarker(hasStorefront ? '#8b5cf6' : '#0ea5e9', hasStorefront ? '🛍' : '🌎');
 }
 function placeIcon(c: string) { return svgMarker(c, '★'); }
 

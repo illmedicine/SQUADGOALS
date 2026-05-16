@@ -8,6 +8,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { buffaloDemoActiveUsers } from './buffaloDemo';
+import { ctDemoActiveUsers } from './ctDemo';
 
 export type ActiveUser = {
   uid: string;
@@ -125,7 +126,7 @@ export function watchActiveUsers(cb: (users: ActiveUser[]) => void) {
     const tick = () => {
       const now = Date.now();
       const list = dget<ActiveUser[]>('activeUsers', []);
-      const showcase = buffaloDemoActiveUsers();
+      const showcase = [...buffaloDemoActiveUsers(), ...ctDemoActiveUsers()];
       const merged = [...list, ...seeded, ...showcase].filter(u => now - u.lastSeenMs <= ACTIVE_WINDOW_MS);
       // Dedupe by uid (real entries win over synthetic of same uid).
       const seen = new Set<string>();
@@ -150,7 +151,7 @@ export function watchActiveUsers(cb: (users: ActiveUser[]) => void) {
   let latest: ActiveUser[] = [];
   const emit = () => {
     const now = Date.now();
-    const showcase = buffaloDemoActiveUsers();
+    const showcase = [...buffaloDemoActiveUsers(), ...ctDemoActiveUsers()];
     const seen = new Set<string>();
     const out: ActiveUser[] = [];
     for (const u of [...latest, ...showcase]) {
