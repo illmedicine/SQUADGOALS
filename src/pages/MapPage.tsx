@@ -446,15 +446,18 @@ export default function MapPage() {
     // and the "snap back to my location" feel while panning).
   }, [pos?.lat, pos?.lng, share, sharePublic, squadIds.join(','), myActiveTrip?.id, pathRecord, pathVis, user?.storefront?.updatedAt, user?.storefront?.visibility, myXp]);
 
-  // Stable map center: capture the first known position and never change it
-  // again, so panning around doesn't get yanked back by GPS updates.
-  const initialCenter = useRef<{ lat: number; lng: number } | null>(null);
-  if (!initialCenter.current && pos) initialCenter.current = pos;
+  // Map center is state-managed (NOT a derived ref) so panTo() calls aren't
+  // immediately reverted by the next React render re-applying a stale
+  // controlled `center` prop. We update mapCenter intentionally on initial
+  // fix, fly-to events, and via onIdle so the prop tracks the map's actual
+  // center after user drags.
+  const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 37.7749, lng: -122.4194 });
+  const didInitCenterRef = useRef(false);
   // IP-based coarse fallback for when GPS is slow/denied — so the map at
   // least opens near the user's region instead of San Francisco.
   const [ipFallback, setIpFallback] = useState<{ lat: number; lng: number } | null>(null);
   useEffect(() => {
-    if (initialCenter.current || pos) return;
+    if (didInitCenterRef.current || pos) return;
     let cancelled = false;
     // ipapi.co is free + CORS-friendly; falls back silently on any error.
     fetch('https://ipapi.co/json/').then(r => r.json()).then(d => {
@@ -465,10 +468,17 @@ export default function MapPage() {
     }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
-  const center = initialCenter.current
-    || pos
-    || ipFallback
-    || { lat: 37.7749, lng: -122.4194 };
+  // Seed mapCenter once: prefer real GPS, then IP fallback. After that the
+  // user (or fly-to) controls it.
+  useEffect(() => {
+    if (didInitCenterRef.current) return;
+    const c = pos || ipFallback;
+    if (!c) return;
+    didInitCenterRef.current = true;
+    setMapCenter(c);
+    const m = mapRef.current;
+    if (m) m.panTo(c);
+  }, [pos?.lat, pos?.lng, ipFallback?.lat, ipFallback?.lng]);
   // Pan the live map once we get a real GPS fix, regardless of where the
   // initial center landed (IP fallback / SF default).
   const didPanToGpsRef = useRef(false);
@@ -478,6 +488,7 @@ export default function MapPage() {
     if (!m) return;
     m.panTo(pos);
     m.setZoom(13);
+    setMapCenter(pos);
     didPanToGpsRef.current = true;
   }, [pos?.lat, pos?.lng]);
   const myAvatar = user?.avatar || defaultAvatar;
@@ -559,7 +570,7 @@ export default function MapPage() {
     try {
       const origin = firingSquad.hq
         ? { lat: firingSquad.hq.lat, lng: firingSquad.hq.lng }
-        : (pos || center);
+        : (pos || mapCenter);
       playLaunch();
       await fireMissile({
         attackerSquadId: firingSquad.id,
@@ -1024,7 +1035,7 @@ export default function MapPage() {
       ) : (
         <GoogleMap
           mapContainerStyle={containerStyle}
-          center={center}
+          center={mapCenter}
           zoom={pos ? 14 : 11}
           options={{
             styles: mapStyles, disableDefaultUI: true, zoomControl: true,
@@ -1049,6 +1060,15 @@ export default function MapPage() {
               setBbox({ n: ne.lat(), s: sw.lat(), e: ne.lng(), w: sw.lng() });
             }
             const z = m.getZoom(); if (typeof z === 'number') setZoom(z);
+            // Sync mapCenter state with the map's actual center so the
+            // controlled `center` prop tracks user drags + imperative panTo.
+            // Without this, the next React render would reset center to the
+            // stale prop value and undo the user's pan/fly-to.
+            const cc = m.getCenter();
+            if (cc) {
+              const lat = cc.lat(), lng = cc.lng();
+              setMapCenter(prev => (prev.lat === lat && prev.lng === lng ? prev : { lat, lng }));
+            }
           }}
           onClick={e => {
             if (!e.latLng) return;
@@ -1502,8 +1522,10 @@ export default function MapPage() {
           onFlyTo={(u) => {
             const m = mapRef.current;
             if (m && typeof u.lat === 'number' && typeof u.lng === 'number') {
-              m.panTo({ lat: u.lat, lng: u.lng });
+              const target = { lat: u.lat, lng: u.lng };
+              m.panTo(target);
               m.setZoom(10);
+              setMapCenter(target);
             }
             setShowPulseRoster(false);
           }}
@@ -1558,7 +1580,7 @@ export default function MapPage() {
           }}
           onFlyTo={(pt) => {
             const m = mapRef.current;
-            if (m) { m.panTo(pt); m.setZoom(15); }
+            if (m) { m.panTo(pt); m.setZoom(15); setMapCenter(pt); }
             setShowPathPanel(false);
           }}
         />
