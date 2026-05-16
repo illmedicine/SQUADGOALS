@@ -35,7 +35,7 @@ import { playLaunch, playImpact } from '../lib/sfx';
 import {
   startHeartbeat, watchActiveUsers, type ActiveUser
 } from '../lib/pulse';
-import { watchLifetimeStats, countryCount } from '../lib/lifetimeStats';
+import { watchLifetimeStats, countryCount, recordSignIn } from '../lib/lifetimeStats';
 import {
   appendDailyPathPoint, shouldAppendDailyPath, watchMyRecentPaths, watchVisiblePaths,
   setAllRecentVisibility, setDayVisibility, deleteDay, sweepOldPaths,
@@ -262,6 +262,13 @@ export default function MapPage() {
   useEffect(() => watchActiveUsers(setActiveUsers), []);
   // Lifetime worldwide users counter — drives the marketing pill.
   useEffect(() => watchLifetimeStats(setLifetime), []);
+  // Backfill our country once GPS is available. The initial sign-in often
+  // runs before the user grants location, so the flag doc may have been
+  // written with country=null. recordSignIn() detects that and patches it.
+  useEffect(() => {
+    if (!user?.uid || typeof pos?.lat !== 'number' || typeof pos?.lng !== 'number') return;
+    recordSignIn(user.uid, { lat: pos.lat, lng: pos.lng });
+  }, [user?.uid, pos?.lat, pos?.lng]);
   // Diff active users against the last snapshot to fire a brief join toast
   // whenever someone new appears in the live pulse. The first sync after
   // mount is suppressed so we don't spam the screen with "X joined" for

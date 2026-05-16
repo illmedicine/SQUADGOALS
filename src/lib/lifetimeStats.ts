@@ -39,9 +39,20 @@ export async function recordSignIn(uid: string, opts: { lat?: number; lng?: numb
     : null;
 
   if (demo) {
-    const counted = JSON.parse(localStorage.getItem(LCOUNTED_KEY) || '{}') as Record<string, true>;
-    if (counted[uid]) return;
-    counted[uid] = true;
+    const counted = JSON.parse(localStorage.getItem(LCOUNTED_KEY) || '{}') as Record<string, { country?: string | null }>;
+    const existing = counted[uid];
+    if (existing) {
+      // Backfill: already counted, but we didn't know their country yet.
+      if (country && !existing.country) {
+        counted[uid] = { country };
+        localStorage.setItem(LCOUNTED_KEY, JSON.stringify(counted));
+        const s = dgetStats();
+        s.countries[country] = (s.countries[country] || 0) + 1;
+        dsetStats(s);
+      }
+      return;
+    }
+    counted[uid] = { country: country || null };
     localStorage.setItem(LCOUNTED_KEY, JSON.stringify(counted));
     const s = dgetStats();
     s.totalUsers += 1;
@@ -54,7 +65,20 @@ export async function recordSignIn(uid: string, opts: { lat?: number; lng?: numb
   const flagRef = doc(db!, 'lifetimeUserFlags', uid);
   try {
     const snap = await getDoc(flagRef);
-    if (snap.exists()) return;
+    if (snap.exists()) {
+      // Already counted. Backfill country if we know it now but didn't at
+      // first sign-in (geolocation was denied / timed out the first time).
+      const existing = snap.data() as { country?: string | null };
+      if (country && !existing.country) {
+        await setDoc(flagRef, { country, countryBackfilledAt: serverTimestamp() }, { merge: true });
+        const aggRef = doc(db!, 'meta', 'lifetimeStats');
+        await setDoc(aggRef, {
+          [`countries.${country}`]: increment(1),
+          updatedAt: serverTimestamp()
+        } as any, { merge: true });
+      }
+      return;
+    }
     await setDoc(flagRef, { uid, country: country || null, firstSeenAt: serverTimestamp() });
     // Bump the global counter document.
     const aggRef = doc(db!, 'meta', 'lifetimeStats');
