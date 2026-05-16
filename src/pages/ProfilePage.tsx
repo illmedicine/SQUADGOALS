@@ -90,29 +90,43 @@ export default function ProfilePage() {
         </Link>
       </div>
 
-      <div className="card" style={{ background: 'linear-gradient(135deg, #8b5cf622, #ec489922)' }}>
-        <h2 style={{ marginTop: 0, fontSize: 20 }}>What is Squad REN?</h2>
+      <div className="card" style={{ background: 'linear-gradient(135deg, #8b5cf622, #ec489922, #f9731622)' }}>
+        <div style={{ fontSize: 12, fontWeight: 800, color: '#5b21b6', textTransform: 'uppercase', letterSpacing: 0.8 }}>What is Squad REN?</div>
+        <h2 style={{ margin: '6px 0 8px', fontSize: 22, lineHeight: 1.15 }}>
+          Your City. <span style={{ color: '#8b5cf6' }}>Your Squad.</span> <span style={{ color: '#f97316' }}>Your Economy.</span>
+        </h2>
         <p style={{ color: 'var(--muted)', marginTop: 4 }}>
-          <strong>Squad REN</strong> is a play on <em>squadron</em> — a tight crew moving together.
-          REN stands for <strong style={{ color: '#8b5cf6' }}>Reputable Engagement Network</strong>:
-          a social-map platform where real communities form around the places people actually go.
-          Become a regular at your coffee shop, gym, bar, or gas station — meet the other regulars,
-          plan trips, and earn prestige for showing up.
+          Squad REN is a <strong style={{ color: '#8b5cf6' }}>live-presence GPS social network</strong> and
+          <strong style={{ color: '#f97316' }}> online marketplace</strong> where real communities form
+          around the places people actually go.
         </p>
-        <p style={{ color: 'var(--muted)', marginTop: 8 }}>
-          Squad REN is also a <strong style={{ color: '#f97316' }}>marketplace for local presence</strong>.
-          Every user gets a personal storefront to promote their products, services, or side hustle.
-          Local businesses and venues can target active squads in their area with exclusive deals,
-          invites, and pop-up promotions — because the most valuable customer is the one who keeps showing up.
-        </p>
-        <p style={{ color: 'var(--muted)', marginTop: 8, fontSize: 13 }}>
-          Think{' '}
-          <strong style={{ color: '#0ea5e9' }}>Snapchat Map</strong> meets{' '}
-          <strong style={{ color: '#f59e0b' }}>Yelp</strong> meets{' '}
-          <strong style={{ color: '#22c55e' }}>Nextdoor</strong> meets a{' '}
-          <strong style={{ color: '#f97316' }}>local-business marketplace</strong> —
-          with squads, trip planning, and live presence on top.
-        </p>
+
+        <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+          <div style={{ padding: '10px 12px', background: '#fff', borderRadius: 12, borderLeft: '4px solid #8b5cf6' }}>
+            <div style={{ fontWeight: 800, color: '#8b5cf6', fontSize: 13 }}>🛰️ Move as a Squadron</div>
+            <div style={{ fontSize: 13, color: '#334155', marginTop: 3, lineHeight: 1.4 }}>
+              Create Squads to seamlessly coordinate physical meetups in dense environments like campuses,
+              festivals, or downtown hubs. <em>Location is only shared with your active Squads.</em>
+            </div>
+          </div>
+
+          <div style={{ padding: '10px 12px', background: '#fff', borderRadius: 12, borderLeft: '4px solid #ec4899' }}>
+            <div style={{ fontWeight: 800, color: '#ec4899', fontSize: 13 }}>🏆 Earn Real-World Prestige</div>
+            <div style={{ fontSize: 13, color: '#334155', marginTop: 3, lineHeight: 1.4 }}>
+              Build your reputation and unlock perks by continuously interacting with your physical
+              environment and local venues.
+            </div>
+          </div>
+
+          <div style={{ padding: '10px 12px', background: '#fff', borderRadius: 12, borderLeft: '4px solid #f97316' }}>
+            <div style={{ fontWeight: 800, color: '#f97316', fontSize: 13 }}>🛍️ The Local Presence Marketplace</div>
+            <div style={{ fontSize: 13, color: '#334155', marginTop: 3, lineHeight: 1.4 }}>
+              Launch a personal storefront to promote your hustle, or discover exclusive, location-based
+              pop-up deals. Local businesses use Squad REN to target active, nearby Squads with real-time
+              event promotions and offers — rewarding the ultimate metric: <strong>physical presence</strong>.
+            </div>
+          </div>
+        </div>
       </div>
 
       <StorefrontCard

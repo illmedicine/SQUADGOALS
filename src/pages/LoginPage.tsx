@@ -3,6 +3,27 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../lib/AuthContext';
 import { firebaseConfigured } from '../lib/firebase';
 
+const PILLARS: { icon: string; title: string; copy: string; tint: string }[] = [
+  {
+    icon: '🛰️',
+    title: 'Move as a Squadron',
+    copy: 'Create Squads to seamlessly coordinate physical meetups on campuses, at festivals, or in downtown hubs. Your location is only shared with your active Squads.',
+    tint: '#8b5cf6'
+  },
+  {
+    icon: '🏆',
+    title: 'Earn Real-World Prestige',
+    copy: 'Build your reputation and unlock perks by continuously interacting with your physical environment and local venues.',
+    tint: '#ec4899'
+  },
+  {
+    icon: '🛍️',
+    title: 'The Local Presence Marketplace',
+    copy: 'Launch a personal storefront to promote your hustle, or discover exclusive pop-up deals. Local businesses target nearby Squads with real-time offers — rewarding the ultimate metric: physical presence.',
+    tint: '#f97316'
+  }
+];
+
 export default function LoginPage() {
   const { signIn, signInDemo, error } = useAuth();
   const [name, setName] = useState('');
@@ -11,7 +32,44 @@ export default function LoginPage() {
     <div className="login">
       <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Squad REN" className="logo-img" />
       <h1>Squad REN</h1>
-      <p className="tagline">Find your crew. Discover local spots. Promote what you do. ✨</p>
+      <p className="tagline">Your City. Your Squad. Your Economy. ✨</p>
+
+      <div style={{
+        maxWidth: 560, width: '100%',
+        background: 'linear-gradient(135deg, rgba(139,92,246,0.06), rgba(236,72,153,0.06), rgba(249,115,22,0.06))',
+        border: '1px solid rgba(139,92,246,0.15)',
+        borderRadius: 16, padding: '18px 18px 14px',
+        marginBottom: 22, textAlign: 'left'
+      }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#5b21b6', textTransform: 'uppercase', letterSpacing: 0.6, textAlign: 'center', marginBottom: 4 }}>
+          What is Squad REN?
+        </div>
+        <p style={{ margin: '6px 0 14px', color: 'var(--fg-soft)', fontSize: 14, lineHeight: 1.45, textAlign: 'center' }}>
+          A <strong style={{ color: '#8b5cf6' }}>live-presence GPS social network</strong> and{' '}
+          <strong style={{ color: '#f97316' }}>online marketplace</strong> where real communities form
+          around the places people actually go.
+        </p>
+        <div style={{ display: 'grid', gap: 10 }}>
+          {PILLARS.map(p => (
+            <div key={p.title} style={{
+              display: 'grid', gridTemplateColumns: '40px 1fr', gap: 10, alignItems: 'start',
+              padding: '10px 12px', background: '#fff', borderRadius: 12,
+              borderLeft: `4px solid ${p.tint}`,
+              boxShadow: '0 1px 2px rgba(0,0,0,0.04)'
+            }}>
+              <div style={{
+                width: 40, height: 40, borderRadius: 10,
+                background: `${p.tint}1a`,
+                display: 'grid', placeItems: 'center', fontSize: 22
+              }}>{p.icon}</div>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: 13, color: p.tint, marginBottom: 2 }}>{p.title}</div>
+                <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.4 }}>{p.copy}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
 
       {firebaseConfigured ? (
         <button className="btn signin-btn" onClick={signIn}>
