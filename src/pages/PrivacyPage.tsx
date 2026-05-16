@@ -44,6 +44,11 @@ export default function PrivacyPage() {
           so the live map pin that other users see is strictly consent-gated.</li>
         <li><strong>Diagnostic logs</strong> — anonymous error traces from the
           browser console. No personal data is included.</li>
+        <li><strong>Waves (👋 say-hi gesture)</strong> — when you wave at another
+          user we store a small record: your uid + display name + avatar, the
+          recipient's uid, an optional ≤140-character note, and a timestamp. Only
+          the recipient can read or delete the wave. Recipients may dismiss a
+          wave at any time, which deletes the record from our servers.</li>
       </ul>
 
       <h2>2. Google OAuth (Sign-In with Google)</h2>

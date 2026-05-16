@@ -3,6 +3,7 @@ import { useAuth, defaultAvatar, type Storefront } from '../lib/AuthContext';
 import { firebaseConfigured } from '../lib/firebase';
 import { Link } from 'react-router-dom';
 import { useState } from 'react';
+import SquadCommercial from '../components/SquadCommercial';
 
 const PILLARS: { icon: string; title: string; copy: string; color: string }[] = [
   {
@@ -68,6 +69,7 @@ const STOREFRONT_KINDS: { value: NonNullable<Storefront['kind']>; label: string;
 
 export default function ProfilePage() {
   const { user, logout, updateStorefront } = useAuth();
+  const [showCommercial, setShowCommercial] = useState(false);
   if (!user) return null;
   return (
     <div className="page">
@@ -91,43 +93,65 @@ export default function ProfilePage() {
       </div>
 
       <div className="card" style={{ background: 'linear-gradient(135deg, #8b5cf622, #ec489922, #f9731622)' }}>
-        <div style={{ fontSize: 12, fontWeight: 800, color: '#5b21b6', textTransform: 'uppercase', letterSpacing: 0.8 }}>What is Squad REN?</div>
+        <div style={{ fontSize: 12, fontWeight: 800, color: '#5b21b6', textTransform: 'uppercase', letterSpacing: 0.8 }}>About Squad REN</div>
         <h2 style={{ margin: '6px 0 8px', fontSize: 22, lineHeight: 1.15 }}>
-          Your City. <span style={{ color: '#8b5cf6' }}>Your Squad.</span> <span style={{ color: '#f97316' }}>Your Economy.</span>
+          The live-presence social map. <span style={{ color: '#8b5cf6' }}>Your squad.</span> <span style={{ color: '#f97316' }}>Your local economy.</span>
         </h2>
         <p style={{ color: 'var(--muted)', marginTop: 4 }}>
-          Squad REN is a <strong style={{ color: '#8b5cf6' }}>live-presence GPS social network</strong> and
-          <strong style={{ color: '#f97316' }}> online marketplace</strong> where real communities form
-          around the places people actually go.
+          Squad REN is the <strong style={{ color: '#0ea5e9' }}>real-time map of everyone live near you</strong> — think Bump-style
+          discovery, but with <strong style={{ color: '#8b5cf6' }}>squads</strong> to roll with and a{' '}
+          <strong style={{ color: '#f97316' }}>local marketplace</strong> built into every profile.
         </p>
 
         <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+          <div style={{ padding: '10px 12px', background: '#fff', borderRadius: 12, borderLeft: '4px solid #0ea5e9' }}>
+            <div style={{ fontWeight: 800, color: '#0ea5e9', fontSize: 13 }}>📍 See who's live around you</div>
+            <div style={{ fontSize: 13, color: '#334155', marginTop: 3, lineHeight: 1.4 }}>
+              A real-time map of every Squad REN user nearby. Tap anyone to fly to them and 👋 wave to break the ice — no DMs, no follows, just hello.
+            </div>
+          </div>
+
           <div style={{ padding: '10px 12px', background: '#fff', borderRadius: 12, borderLeft: '4px solid #8b5cf6' }}>
             <div style={{ fontWeight: 800, color: '#8b5cf6', fontSize: 13 }}>🛰️ Move as a Squadron</div>
             <div style={{ fontSize: 13, color: '#334155', marginTop: 3, lineHeight: 1.4 }}>
-              Create Squads to seamlessly coordinate physical meetups in dense environments like campuses,
-              festivals, or downtown hubs. <em>Location is only shared with your active Squads.</em>
+              Roll deeper than solo. Create or join Squads to coordinate physical meetups on campuses,
+              festivals, or downtown hubs. <em>Squad location stays squad-only.</em>
             </div>
           </div>
 
           <div style={{ padding: '10px 12px', background: '#fff', borderRadius: 12, borderLeft: '4px solid #ec4899' }}>
             <div style={{ fontWeight: 800, color: '#ec4899', fontSize: 13 }}>🏆 Earn Real-World Prestige</div>
             <div style={{ fontSize: 13, color: '#334155', marginTop: 3, lineHeight: 1.4 }}>
-              Build your reputation and unlock perks by continuously interacting with your physical
-              environment and local venues.
+              Become a regular at the spots you love. Check-ins, reviews, and trips compound into a
+              prestige tier that unlocks perks at local venues.
             </div>
           </div>
 
           <div style={{ padding: '10px 12px', background: '#fff', borderRadius: 12, borderLeft: '4px solid #f97316' }}>
             <div style={{ fontWeight: 800, color: '#f97316', fontSize: 13 }}>🛍️ The Local Presence Marketplace</div>
             <div style={{ fontSize: 13, color: '#334155', marginTop: 3, lineHeight: 1.4 }}>
-              Launch a personal storefront to promote your hustle, or discover exclusive, location-based
-              pop-up deals. Local businesses use Squad REN to target active, nearby Squads with real-time
-              event promotions and offers — rewarding the ultimate metric: <strong>physical presence</strong>.
+              Every profile is a mini storefront. Promote your hustle, products, or services to the
+              people physically around you — and local businesses target nearby Squads with real-time
+              offers. The ultimate metric: <strong>physical presence</strong>.
             </div>
           </div>
         </div>
+
+        <div className="about-cta">
+          <button
+            className="btn watch-commercial"
+            onClick={() => setShowCommercial(true)}
+            aria-label="Watch the Squad REN commercial"
+          >
+            ▶ Watch the commercial
+          </button>
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+            30s · animated · <em>"What's in your squad?"</em>
+          </span>
+        </div>
       </div>
+
+      {showCommercial && <SquadCommercial onClose={() => setShowCommercial(false)} />}
 
       <StorefrontCard
         initial={user.storefront}

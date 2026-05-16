@@ -4,10 +4,16 @@
 crew moving together — and the REN acronym is the mission: build real
 communities, and a real local economy, around the places people actually go.
 
+**Short version:** Squad REN is the **live-presence social map**. It's what
+*Bump* would be if it grew up — Bump-style "see who's nearby and 👋 say hi"
+discovery, plus **squads** to actually roll with and a **local marketplace**
+baked into every profile.
+
 Squad REN is a social-map platform with three audiences in one app:
 
-- **Squadders** become regulars at the spots they love, plan trips, drop
-  reviews, and earn prestige for showing up.
+- **Squadders** see who's live around them right now, wave hello with a tap,
+  become regulars at the spots they love, plan trips, drop reviews, and earn
+  prestige for showing up.
 - **Local businesses & venues** target active squads in their area with
   exclusive deals, early invites, and pop-up promotions — because the most
   valuable customer is the one who keeps showing up.
@@ -15,8 +21,23 @@ Squad REN is a social-map platform with three audiences in one app:
   storefront on their profile to promote their products, services, and
   squad-only offers to the people physically around them.
 
-Think *Snapchat Map* meets *Yelp* meets *Nextdoor* meets a local-business
-marketplace — with squads, trip planning, and live presence on top.
+Think *Bump* meets *Snapchat Map* meets *Yelp* meets a local-business
+marketplace — with squads, trip planning, real-world prestige, and live
+presence on top.
+
+## Why Squad REN vs. Bump
+
+Bump nailed the gesture: a single map of strangers nearby, no friend graph,
+no DMs, just "is anyone around?". Squad REN keeps that gesture (👋 Wave) and
+adds the three things Bump intentionally leaves out:
+
+1. **Squads** — a group identity so you can roll with your crew, not just
+   solo-discover strangers.
+2. **Storefronts** — every profile is a mini marketplace, so when you wave at
+   someone you instantly see what they do, sell, or host.
+3. **Prestige** — showing up at real places compounds into a tier that
+   unlocks perks at local venues. Reputation is built on physical presence,
+   not followers.
 
 Squad REN ships two ways from one codebase:
 
@@ -27,6 +48,9 @@ Squad REN ships two ways from one codebase:
 
 ## The pillars
 
+- 📍 **See who's live around you.** A real-time map of every Squad REN user
+  nearby. Tap any avatar to fly to them, see their storefront, and 👋 wave.
+  No friend request, no DMs — just hello.
 - ☕ **Become a regular.** Check in at the places you frequent — coffee shops,
   bars, gyms, gas stations. Other regulars see you on the map and a community
   forms around the spot.

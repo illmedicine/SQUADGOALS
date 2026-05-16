@@ -5,21 +5,27 @@ import { firebaseConfigured } from '../lib/firebase';
 
 const PILLARS: { icon: string; title: string; copy: string; tint: string }[] = [
   {
+    icon: '�',
+    title: 'See who’s live around you',
+    copy: 'A real-time map of every Squad REN user nearby — fly to anyone with one tap, see their avatar, and 👋 wave to break the ice. Bump-style discovery, but city-scale.',
+    tint: '#0ea5e9'
+  },
+  {
     icon: '🛰️',
     title: 'Move as a Squadron',
-    copy: 'Create Squads to seamlessly coordinate physical meetups on campuses, at festivals, or in downtown hubs. Your location is only shared with your active Squads.',
+    copy: 'Roll deeper than solo. Create or join Squads to coordinate physical meetups on campus, at festivals, or in your downtown hubs. Location is squad-scoped by default.',
     tint: '#8b5cf6'
   },
   {
     icon: '🏆',
     title: 'Earn Real-World Prestige',
-    copy: 'Build your reputation and unlock perks by continuously interacting with your physical environment and local venues.',
+    copy: 'Become a regular at the spots you love. Check-ins, reviews, and trips compound into a prestige tier that unlocks perks at local venues.',
     tint: '#ec4899'
   },
   {
     icon: '🛍️',
     title: 'The Local Presence Marketplace',
-    copy: 'Launch a personal storefront to promote your hustle, or discover exclusive pop-up deals. Local businesses target nearby Squads with real-time offers — rewarding the ultimate metric: physical presence.',
+    copy: 'Every profile is a mini storefront — promote your hustle, products, or services to the people physically around you. Local businesses target nearby Squads with real-time offers.',
     tint: '#f97316'
   }
 ];
@@ -32,7 +38,7 @@ export default function LoginPage() {
     <div className="login">
       <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Squad REN" className="logo-img" />
       <h1>Squad REN</h1>
-      <p className="tagline">Your City. Your Squad. Your Economy. ✨</p>
+      <p className="tagline">The live-presence social map. 👋 Bump-style hellos, real squads, real local economy.</p>
 
       <div style={{
         maxWidth: 560, width: '100%',
@@ -45,9 +51,10 @@ export default function LoginPage() {
           What is Squad REN?
         </div>
         <p style={{ margin: '6px 0 14px', color: 'var(--fg-soft)', fontSize: 14, lineHeight: 1.45, textAlign: 'center' }}>
-          A <strong style={{ color: '#8b5cf6' }}>live-presence GPS social network</strong> and{' '}
-          <strong style={{ color: '#f97316' }}>online marketplace</strong> where real communities form
-          around the places people actually go.
+          A <strong style={{ color: '#0ea5e9' }}>live-presence social map</strong> built around squads and
+          a <strong style={{ color: '#f97316' }}>local marketplace</strong>. Think Bump — see who's nearby and
+          say hi with a tap — plus crews to roll with, prestige for showing up, and storefronts so your hustle
+          travels with you.
         </p>
         <div style={{ display: 'grid', gap: 10 }}>
           {PILLARS.map(p => (

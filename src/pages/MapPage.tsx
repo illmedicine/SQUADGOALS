@@ -46,6 +46,10 @@ import {
 import { sendStrikeEmails, emailsForUids, compressImage } from '../lib/mailer';
 import { squadPrestige } from '../lib/demoSeed';
 import { getLogo, DEFAULT_LOGO_ID } from '../lib/squadLogos';
+import {
+  sendWave, watchInbox, readWaveIds, markWaveRead, dismissWave, waveBack,
+  type Wave
+} from '../lib/waves';
 
 const containerStyle: React.CSSProperties = { width: '100%', height: '100%' };
 const GOOGLE_MAPS_KEY = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string) || '';
@@ -192,6 +196,15 @@ export default function MapPage() {
   const knownActiveRef = useRef<Set<string>>(new Set());
   const firstActiveSyncRef = useRef(true);
 
+  // ——— Waves (bump-style say-hi gesture) ———
+  // Inbox = every wave addressed to me; toasts surface unread ones. Outbox is
+  // ephemeral (we just show a quick "sent!" toast after `sendWave` resolves).
+  const [inbox, setInbox] = useState<Wave[]>([]);
+  const [waveToasts, setWaveToasts] = useState<Wave[]>([]);
+  const [waveSentToast, setWaveSentToast] = useState<{ name: string; at: number } | null>(null);
+  const knownWaveIdsRef = useRef<Set<string>>(new Set());
+  const firstWaveSyncRef = useRef(true);
+
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: GOOGLE_MAPS_KEY,
     id: 'squadren-google-map',
@@ -264,6 +277,34 @@ export default function MapPage() {
   // Subscribe to recent missiles so the map can animate arcs in real time.
   useEffect(() => watchRecentMissiles(setMissiles), []);
   useEffect(() => watchActiveUsers(setActiveUsers), []);
+  // Subscribe to incoming waves (👋 say-hi gesture). New unread waves pop
+  // a toast bottom-right; the read state is per-device localStorage so a
+  // wave only nags you once.
+  useEffect(() => {
+    if (!user) return;
+    return watchInbox(user.uid, setInbox);
+  }, [user?.uid]);
+  useEffect(() => {
+    if (!user) return;
+    const read = readWaveIds(user.uid);
+    if (firstWaveSyncRef.current) {
+      // Don't pop toasts for waves that were already in the inbox at sign-in;
+      // they're "stale" and will show in the inbox panel instead.
+      inbox.forEach(w => knownWaveIdsRef.current.add(w.id));
+      firstWaveSyncRef.current = false;
+      return;
+    }
+    const fresh = inbox.filter(w => !knownWaveIdsRef.current.has(w.id) && !read.has(w.id));
+    if (fresh.length === 0) return;
+    fresh.forEach(w => knownWaveIdsRef.current.add(w.id));
+    setWaveToasts(prev => [...prev, ...fresh].slice(-3));
+    // Auto-expire each toast after 7s. The wave itself stays in the inbox.
+    for (const w of fresh) {
+      window.setTimeout(() => {
+        setWaveToasts(prev => prev.filter(t => t.id !== w.id));
+      }, 7000);
+    }
+  }, [inbox, user?.uid]);
   // Lifetime worldwide users counter — drives the marketing pill.
   useEffect(() => watchLifetimeStats(setLifetime), []);
   // Backfill our country once GPS is available. The initial sign-in often
@@ -809,6 +850,58 @@ export default function MapPage() {
             </span>
           </div>
         ))}
+        {waveToasts.map(w => (
+          <div
+            key={'wt:' + w.id}
+            onClick={async () => {
+              if (!user) return;
+              markWaveRead(user.uid, w.id);
+              setWaveToasts(prev => prev.filter(t => t.id !== w.id));
+              await waveBack({
+                fromUid: user.uid,
+                fromName: user.displayName,
+                fromAvatar: user.avatar || defaultAvatar,
+                originalWave: w
+              });
+              setWaveSentToast({ name: 'Waved back at ' + w.fromName, at: Date.now() });
+              window.setTimeout(() => setWaveSentToast(null), 3500);
+            }}
+            style={{
+              background: 'linear-gradient(135deg,#f59e0b,#ec4899)',
+              color: '#fff', borderRadius: 12, padding: '10px 12px',
+              boxShadow: '0 6px 18px rgba(236,72,153,0.35)',
+              animation: 'joinSlideIn 240ms ease-out',
+              display: 'flex', alignItems: 'center', gap: 10,
+              fontSize: 12, pointerEvents: 'auto', cursor: 'pointer'
+            }}
+            title="Tap to wave back"
+          >
+            <span style={{ fontSize: 22 }}>👋</span>
+            <span style={{ lineHeight: 1.25, flex: 1, minWidth: 0 }}>
+              <strong style={{ display: 'block', fontSize: 13 }}>{w.fromName} waved at you</strong>
+              {w.note ? (
+                <span style={{ opacity: 0.95, fontStyle: 'italic', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>“{w.note}”</span>
+              ) : (
+                <span style={{ opacity: 0.9 }}>Tap to wave back</span>
+              )}
+            </span>
+            <button
+              onClick={(e) => { e.stopPropagation(); if (user) { markWaveRead(user.uid, w.id); dismissWave(user.uid, w.id); } setWaveToasts(prev => prev.filter(t => t.id !== w.id)); }}
+              aria-label="Dismiss"
+              style={{ background: 'rgba(0,0,0,0.25)', color: '#fff', border: 'none', borderRadius: 999, width: 22, height: 22, cursor: 'pointer', fontSize: 13, lineHeight: 1 }}
+            >×</button>
+          </div>
+        ))}
+        {waveSentToast && (
+          <div
+            style={{
+              background: '#0f172a', color: '#fff', borderRadius: 10, padding: '8px 12px',
+              boxShadow: '0 6px 18px rgba(15,23,42,0.35)',
+              animation: 'joinSlideIn 240ms ease-out',
+              fontSize: 12, fontWeight: 700
+            }}
+          >✓ {waveSentToast.name.startsWith('Waved') || waveSentToast.name.startsWith('Slow') ? waveSentToast.name : `Waved at ${waveSentToast.name}`}</div>
+        )}
       </div>
       <div className="map-overlay">
         <div className="map-card">
@@ -1163,6 +1256,25 @@ export default function MapPage() {
                       squads={[]}
                       tier={tierForXp(p.xp || 0)}
                       placeName={p.placeName || undefined}
+                      viewerUid={user?.uid}
+                      targetUid={p.uid}
+                      onWave={async (note) => {
+                        if (!user) return;
+                        const r = await sendWave({
+                          fromUid: user.uid,
+                          fromName: user.displayName,
+                          fromAvatar: user.avatar || defaultAvatar,
+                          toUid: p.uid,
+                          note
+                        });
+                        if (r.ok) {
+                          setWaveSentToast({ name: p.displayName, at: Date.now() });
+                          window.setTimeout(() => setWaveSentToast(null), 3500);
+                        } else if (r.reason === 'cooldown') {
+                          setWaveSentToast({ name: 'Slow down — already waved at ' + p.displayName, at: Date.now() });
+                          window.setTimeout(() => setWaveSentToast(null), 3500);
+                        }
+                      }}
                       onClose={() => setSelected(null)}
                     />
                   </InfoWindowF>
@@ -1910,9 +2022,15 @@ function MapAvatarCard(props: {
   tier: typeof TIERS[number];
   placeName?: string;
   isMe?: boolean;
+  viewerUid?: string;
+  targetUid?: string;
+  onWave?: (note?: string) => void;
   onClose: () => void;
 }) {
-  const { displayName, avatar, storefront, squads, tier, placeName, isMe, onClose } = props;
+  const { displayName, avatar, storefront, squads, tier, placeName, isMe, viewerUid, targetUid, onWave, onClose } = props;
+  const [waveNote, setWaveNote] = useState('');
+  const [waveSending, setWaveSending] = useState(false);
+  const canWave = !!viewerUid && !!targetUid && viewerUid !== targetUid && !isMe && !!onWave;
   const sf = storefront && (storefront.name || storefront.tagline || storefront.bio || (storefront.items && storefront.items.length) || storefront.offers)
     ? storefront : null;
   const items = (sf?.items || []).slice(0, 6);
@@ -2015,6 +2133,36 @@ function MapAvatarCard(props: {
       {!sf && isMe && (
         <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>
           💡 Set up your storefront on the Profile page so squadders nearby can see what you do.
+        </div>
+      )}
+      {canWave && (
+        <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px dashed #e5e7eb' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>Bump-style hello</div>
+          <input
+            value={waveNote}
+            onChange={e => setWaveNote(e.target.value.slice(0, 140))}
+            placeholder="Optional note (e.g. 'Saw your storefront!')"
+            style={{ width: '100%', boxSizing: 'border-box', fontSize: 12, padding: '6px 8px', border: '1px solid #e5e7eb', borderRadius: 8, marginBottom: 6 }}
+            disabled={waveSending}
+          />
+          <button
+            onClick={async () => {
+              if (!onWave || waveSending) return;
+              setWaveSending(true);
+              try { await onWave(waveNote.trim() || undefined); }
+              finally { setWaveSending(false); setWaveNote(''); }
+            }}
+            disabled={waveSending}
+            style={{
+              width: '100%', padding: '8px 10px', borderRadius: 10, border: 'none', cursor: 'pointer',
+              background: 'linear-gradient(135deg,#8b5cf6,#ec4899)', color: '#fff', fontWeight: 800, fontSize: 13
+            }}
+          >
+            {waveSending ? 'Sending…' : `👋 Wave at ${displayName.split(' ')[0]}`}
+          </button>
+          <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 4 }}>
+            They'll see a notification next time they open the app.
+          </div>
         </div>
       )}
     </div>
