@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Squad REN</string>
+    <string name="title_activity_main">Squad REN</string>
+    <string name="package_name">io.squadren.app</string>
+    <string name="custom_url_scheme">io.squadren.app</string>
+</resources>
