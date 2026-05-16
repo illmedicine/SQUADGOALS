@@ -306,9 +306,10 @@ export default function MapPage() {
       displayName: user.displayName,
       lat: pos?.lat,
       lng: pos?.lng,
-      squadCount: squadIds.length
+      squadCount: squadIds.length,
+      squadIds
     });
-  }, [user?.uid, pos?.lat, pos?.lng, squadIds.length]);
+  }, [user?.uid, pos?.lat, pos?.lng, squadIds.join(',')]);
   useEffect(() => {
     if (!user) return;
     fetchStats(user.uid).then(s => setMyXp(s.xp || 0)).catch(() => {});
@@ -480,6 +481,16 @@ export default function MapPage() {
   // the first squad outright (origin becomes its leader's HQ or the user's
   // current GPS if neither is set).
   const firingSquad = useMemo(() => squads.find(s => !!s.hq) || squads[0] || null, [squads]);
+  // Distinct squads with at least one currently-active member. Every squad
+  // any active user belongs to counts as "live" — this is what powers the
+  // marketing "X squads live" pill and persists across all viewers.
+  const liveSquadCount = useMemo(() => {
+    const set = new Set<string>();
+    for (const u of activeUsers) {
+      if (Array.isArray(u.squadIds)) for (const id of u.squadIds) set.add(id);
+    }
+    return set.size;
+  }, [activeUsers]);
   const myTierObj = useMemo(() => {
     let t = TIERS[0];
     for (const cur of TIERS) if (myXp >= cur.xp) t = cur;
@@ -761,10 +772,16 @@ export default function MapPage() {
         <div className="map-card">
           <div className="row">
             <span className="pill good">●</span>
-            <span>{presence.filter(p => p.uid !== user?.uid).length} squad nearby</span>
+            <span>{presence.filter(p => p.uid !== user?.uid).length} squadmates near</span>
             <span className="pill">{Math.max(0, publicPresence.filter(p => p.uid !== user?.uid).length)} public</span>
             <span className="pill">{publicPins.length} pins</span>
-            <span className="pill">{demoSquadList.length} squads</span>
+            <span
+              className="pill"
+              title="Squads with at least one member currently online"
+              style={liveSquadCount > 0 ? { background: 'rgba(34,197,94,0.18)', color: '#166534', borderColor: 'rgba(34,197,94,0.45)' } : undefined}
+            >
+              {liveSquadCount} squad{liveSquadCount === 1 ? '' : 's'} live
+            </span>
           </div>
           {/* Member Population Pulse — live count of every Squad REN user
               whose heartbeat is fresh. Tap to scan the globe for them. */}

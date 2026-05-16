@@ -17,6 +17,9 @@ export type ActiveUser = {
   lat?: number;
   lng?: number;
   squadCount?: number;
+  // Squad IDs this user belongs to. Used to derive the platform-wide
+  // "squads live" count (any squad with ≥1 active member).
+  squadIds?: string[];
   // ms epoch mirror so clients can filter without resolving serverTimestamp.
   lastSeenMs: number;
   lastSeen?: any;
@@ -73,6 +76,7 @@ export function startHeartbeat(p: {
   displayName: string;
   lat?: number; lng?: number;
   squadCount?: number;
+  squadIds?: string[];
 }, intervalMs = 60_000): () => void {
   let cancelled = false;
   const tick = async () => {
@@ -83,6 +87,7 @@ export function startHeartbeat(p: {
       displayName: p.displayName,
       lastSeenMs: now,
       ...(p.squadCount !== undefined ? { squadCount: p.squadCount } : {}),
+      ...(p.squadIds && p.squadIds.length ? { squadIds: p.squadIds } : {}),
       ...(typeof p.lat === 'number' ? { lat: p.lat } : {}),
       ...(typeof p.lng === 'number' ? { lng: p.lng } : {})
     };
