@@ -7,6 +7,7 @@ import {
   doc, setDoc, onSnapshot, collection, query, where, serverTimestamp, limit
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { buffaloDemoActiveUsers } from './buffaloDemo';
 
 export type ActiveUser = {
   uid: string;
@@ -117,12 +118,15 @@ export function startHeartbeat(p: {
 // to the ACTIVE_WINDOW so stale heartbeats fade out within ~2 minutes even if
 // the writer never marked themselves offline.
 export function watchActiveUsers(cb: (users: ActiveUser[]) => void) {
+  // Buffalo showcase squad is always merged in with fresh heartbeats so new
+  // users immediately see ~10 live squadders even before anyone real signs in.
   if (demo) {
     const seeded = syntheticPulse();
     const tick = () => {
       const now = Date.now();
       const list = dget<ActiveUser[]>('activeUsers', []);
-      const merged = [...list, ...seeded].filter(u => now - u.lastSeenMs <= ACTIVE_WINDOW_MS);
+      const showcase = buffaloDemoActiveUsers();
+      const merged = [...list, ...seeded, ...showcase].filter(u => now - u.lastSeenMs <= ACTIVE_WINDOW_MS);
       // Dedupe by uid (real entries win over synthetic of same uid).
       const seen = new Set<string>();
       const out: ActiveUser[] = [];
@@ -143,10 +147,25 @@ export function watchActiveUsers(cb: (users: ActiveUser[]) => void) {
     where('lastSeenMs', '>=', cutoff),
     limit(1000)
   );
-  return onSnapshot(q, snap => {
+  let latest: ActiveUser[] = [];
+  const emit = () => {
     const now = Date.now();
-    cb(snap.docs
-      .map(d => d.data() as ActiveUser)
-      .filter(u => now - u.lastSeenMs <= ACTIVE_WINDOW_MS));
+    const showcase = buffaloDemoActiveUsers();
+    const seen = new Set<string>();
+    const out: ActiveUser[] = [];
+    for (const u of [...latest, ...showcase]) {
+      if (seen.has(u.uid)) continue;
+      if (now - u.lastSeenMs > ACTIVE_WINDOW_MS) continue;
+      seen.add(u.uid); out.push(u);
+    }
+    cb(out);
+  };
+  const unsub = onSnapshot(q, snap => {
+    latest = snap.docs.map(d => d.data() as ActiveUser);
+    emit();
   });
+  // Keep the showcase heartbeats "fresh" by re-emitting every 30s so they
+  // never age out of the ACTIVE_WINDOW even when no real snapshot arrives.
+  const refresh = setInterval(emit, 30_000);
+  return () => { unsub(); clearInterval(refresh); };
 }

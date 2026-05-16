@@ -5,6 +5,7 @@ import {
 import { db } from './firebase';
 import { haversine, type LatLng } from './geo';
 import { demoPublicPresence, demoSquads } from './demoSeed';
+import { buffaloDemoPresence, buffaloDemoSquad } from './buffaloDemo';
 import { createPublicPin } from './publicPins';
 
 export type DemoSquad = ReturnType<typeof demoSquads>[number];
@@ -194,15 +195,16 @@ export async function listPublicSquads(): Promise<Squad[]> {
 
 // Live stream of public squads — used by the map to render HQ pins.
 export function watchPublicSquadsLive(cb: (squads: Squad[]) => void) {
+  const showcase = [buffaloDemoSquad() as Squad];
   if (demo) {
-    const tick = () => cb(dget<Squad[]>('squads', []).filter(s => s.visibility === 'public'));
+    const tick = () => cb([...dget<Squad[]>('squads', []).filter(s => s.visibility === 'public'), ...showcase]);
     tick();
     const id = setInterval(tick, 2000);
     return () => clearInterval(id);
   }
   const q = query(collection(db!, 'squads'), where('visibility', '==', 'public'));
   return onSnapshot(q, snap => {
-    cb(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as Squad[]);
+    cb([...snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as Squad[], ...showcase]);
   });
 }
 
@@ -243,7 +245,9 @@ export function watchSquadPresence(squadIds: string[], cb: (p: Presence[]) => vo
 // Used to render the "world" presence layer alongside squad-mates.
 export function watchPublicPresence(cb: (p: Presence[]) => void, max = 200) {
   // Demo presence is always overlaid so the world map feels alive.
-  const seeded = demoPublicPresence();
+  // Buffalo showcase squad is always included so new users immediately
+  // see what an active hyper-local community looks like.
+  const seeded = [...demoPublicPresence(), ...buffaloDemoPresence()];
   if (demo) {
     const tick = () => {
       const all = dget<Presence[]>('presence', []);
