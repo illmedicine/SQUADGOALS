@@ -87,7 +87,11 @@ const CATEGORIES = ['Coffee', 'Food', 'Bar', 'Venue', 'Park', 'Shopping', 'Work'
 export default function MapPage() {
   const { user } = useAuth();
   const [share, setShare] = useState<boolean>(() => localStorage.getItem('squadren.share') !== 'false');
-  const [sharePublic, setSharePublic] = useState<boolean>(() => localStorage.getItem('squadren.sharePublic') === 'true');
+  // Public share defaults ON so live squadders are visible to the wider
+  // community out of the box. Users can opt out via the "Squad only" toggle
+  // (which also flips this off via the share-stack). Privacy policy reflects
+  // this default in section 5.
+  const [sharePublic, setSharePublic] = useState<boolean>(() => localStorage.getItem('squadren.sharePublic') !== 'false');
   const [layer, setLayer] = useState<Layer>('public');
   // Google deprecated the Heatmap Layer (unavailable from May 2026 onward).
   // Default OFF so it doesn't crash the map. Toggle still works if Google
@@ -299,17 +303,20 @@ export default function MapPage() {
     }
   }, [activeUsers, user?.uid]);
   // Heartbeat the current user every minute so they show up in the pulse.
+  // Coordinates are ONLY attached when the user has opted into public
+  // sharing — otherwise the heartbeat is a presence-only ping (uid + name).
   useEffect(() => {
     if (!user) return;
+    const publish = share && sharePublic;
     return startHeartbeat({
       uid: user.uid,
       displayName: user.displayName,
-      lat: pos?.lat,
-      lng: pos?.lng,
+      lat: publish ? pos?.lat : undefined,
+      lng: publish ? pos?.lng : undefined,
       squadCount: squadIds.length,
       squadIds
     });
-  }, [user?.uid, pos?.lat, pos?.lng, squadIds.join(',')]);
+  }, [user?.uid, pos?.lat, pos?.lng, share, sharePublic, squadIds.join(',')]);
   useEffect(() => {
     if (!user) return;
     fetchStats(user.uid).then(s => setMyXp(s.xp || 0)).catch(() => {});
@@ -666,8 +673,31 @@ export default function MapPage() {
     if (zoom < 5) return []; // hide individual people at world zoom
     const inBox = makeBoxFilter(bbox);
     const cap = zoom < 7 ? 80 : zoom < 10 ? 200 : 500;
-    return publicPresence.filter(p => p.uid !== user?.uid && inBox(p.lat, p.lng)).slice(0, cap);
-  }, [publicPresence, bbox, zoom, user?.uid]);
+    // Merge live heartbeats from `activeUsers` so anyone currently online
+    // with a shared coordinate shows up as a pin, even if their `presence`
+    // doc didn't make it through (e.g. rules hiccup, sharePublic toggled on
+    // mid-session, or first-sync race). Heartbeats only carry lat/lng when
+    // the user opted into public sharing, so this stays consent-gated.
+    const knownUids = new Set(publicPresence.map(p => p.uid));
+    const fallbackFromActive: Presence[] = activeUsers
+      .filter(u => u.uid !== user?.uid
+        && typeof u.lat === 'number' && typeof u.lng === 'number'
+        && !knownUids.has(u.uid))
+      .map(u => ({
+        uid: u.uid,
+        displayName: u.displayName,
+        avatar: defaultAvatar,
+        lat: u.lat as number,
+        lng: u.lng as number,
+        placeName: null,
+        squadIds: u.squadIds || [],
+        shareLocation: true,
+        sharePublic: true,
+        updatedAt: u.lastSeenMs
+      } as Presence));
+    const merged = [...publicPresence, ...fallbackFromActive];
+    return merged.filter(p => p.uid !== user?.uid && inBox(p.lat, p.lng)).slice(0, cap);
+  }, [publicPresence, activeUsers, bbox, zoom, user?.uid]);
   const visiblePublicPins = useMemo(() => {
     if (zoom < 4) return [];
     const inBox = makeBoxFilter(bbox);

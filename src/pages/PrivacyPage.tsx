@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 // footer) so Google OAuth verification, app-store review, and end-users can
 // inspect exactly what Squad REN collects, who it talks to, and how to wipe
 // their data. Update the lastUpdated string whenever this file is changed.
-const lastUpdated = 'May 15, 2026';
+const lastUpdated = 'May 16, 2026';
 
 export default function PrivacyPage() {
   return (
@@ -28,17 +28,20 @@ export default function PrivacyPage() {
           profile picture URL via Google OAuth. We use this only to sign you in,
           identify you to your squad, and display your avatar.</li>
         <li><strong>Location</strong> — your device's GPS coordinates while the
-          app is open and you have toggled location sharing on. Coordinates are
-          only stored against your account when you opt in (Squad share or Public
-          share). When both toggles are off, your position is never written to our
-          servers.</li>
+          app is open and you have toggled location sharing on. <strong>By
+          default a new account ships with Squad share and Public share both
+          ON</strong> so live squadders are visible to the wider community out of
+          the box. You can flip either off at any time from the share toggles in
+          the top-right of the map; when both are off, your position is never
+          written to our servers.</li>
         <li><strong>Activity</strong> — places you pin, reviews you import or
           write, trips you plan, check-ins, squad memberships, and missile-game
           actions. These are stored under your account so you can see them later.</li>
         <li><strong>Presence heartbeat</strong> — a 60-second timestamp so the
           Population Pulse Counter can show how many users are currently online.
-          This contains your uid, display name, and (only if location sharing is
-          on) a coarse coordinate.</li>
+          This always contains your uid and display name. A coarse coordinate is
+          attached <em>only</em> when both Squad share and Public share are on,
+          so the live map pin that other users see is strictly consent-gated.</li>
         <li><strong>Diagnostic logs</strong> — anonymous error traces from the
           browser console. No personal data is included.</li>
       </ul>
@@ -97,9 +100,12 @@ export default function PrivacyPage() {
         <li><strong>You</strong> always see everything you own.</li>
         <li><strong>Your squad-mates</strong> see your live location only while
           you have <em>Squad share</em> toggled on.</li>
-        <li><strong>The public</strong> sees your live location only while you
-          have <em>Public share</em> toggled on, plus any pins or reviews you
-          mark as public.</li>
+        <li><strong>The public</strong> sees your live location — as a pin on
+          the world map and an entry in the Population Pulse roster — while you
+          have <em>Public share</em> toggled on. Public share is ON by default
+          for new accounts; switch the share-stack toggle to “Squad only” to
+          opt out at any time. Pins, reviews, and storefronts you mark as public
+          remain visible per their own visibility settings.</li>
         <li><strong>Nobody else</strong> — we do not sell, rent, or share
           identifying data with advertisers or third-party data brokers.</li>
       </ul>
