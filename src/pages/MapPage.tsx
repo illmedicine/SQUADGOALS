@@ -4,6 +4,7 @@ import {
   GoogleMap, useJsApiLoader, MarkerF, InfoWindowF, CircleF, HeatmapLayerF, PolylineF
 } from '@react-google-maps/api';
 import { useAuth, defaultAvatar } from '../lib/AuthContext';
+import type { Storefront, AvatarConfig } from '../lib/AuthContext';
 import { useLocation } from '../lib/useLocation';
 import {
   updatePresence, watchSquadPresence, watchPublicPresence, watchUserSquads, watchVisitedPlaces,
@@ -24,7 +25,7 @@ import {
   findReachedStop, PATH_MIN_M, PATH_MIN_MS, type Trip
 } from '../lib/trips';
 import { haversine } from '../lib/geo';
-import { TIERS, fetchStats } from '../lib/prestige';
+import { TIERS, fetchStats, tierForXp } from '../lib/prestige';
 import {
   watchRecentMissiles, fireMissile, getAmmo,
   missileStyleForTier, rangeKmForTier, trailPath, projectilePos,
@@ -306,13 +307,19 @@ export default function MapPage() {
 
   useEffect(() => {
     if (!user || !pos) return;
+    // Only attach the storefront snapshot to presence when the user has
+    // opted in to public storefront visibility — squad-only and private
+    // storefronts must NOT leak through the public presence stream.
+    const sfPublic = user.storefront && user.storefront.visibility === 'public' ? user.storefront : null;
     updatePresence({
       uid: user.uid, displayName: user.displayName,
       avatar: user.avatar || defaultAvatar,
       lat: pos.lat, lng: pos.lng,
       placeName: null, squadIds,
       shareLocation: share,
-      sharePublic: share && sharePublic
+      sharePublic: share && sharePublic,
+      ...(sfPublic ? { storefront: sfPublic } : {}),
+      ...(typeof myXp === 'number' ? { xp: myXp } : {})
     });
     const mates = presence.filter(p => p.uid !== user.uid).map(p => ({ lat: p.lat, lng: p.lng }));
     tickBadges(pos, mates);
@@ -385,7 +392,7 @@ export default function MapPage() {
     // want to push presence when *our* position/share state changes, not on
     // every incoming squad-mate update (which was causing repeated re-renders
     // and the "snap back to my location" feel while panning).
-  }, [pos?.lat, pos?.lng, share, sharePublic, squadIds.join(','), myActiveTrip?.id, pathRecord, pathVis]);
+  }, [pos?.lat, pos?.lng, share, sharePublic, squadIds.join(','), myActiveTrip?.id, pathRecord, pathVis, user?.storefront?.updatedAt, user?.storefront?.visibility, myXp]);
 
   // Stable map center: capture the first known position and never change it
   // again, so panning around doesn't get yanked back by GPS updates.
@@ -945,7 +952,15 @@ export default function MapPage() {
               >
                 {selected === 'me' && (
                   <InfoWindowF position={pos} onCloseClick={() => setSelected(null)}>
-                    <div style={{ color: '#111' }}>You ({user?.displayName})</div>
+                    <MapAvatarCard
+                      displayName={user?.displayName || 'You'}
+                      avatar={myAvatar}
+                      storefront={user?.storefront}
+                      squads={squads.map(s => ({ id: s.id, name: s.name }))}
+                      tier={myTierObj}
+                      isMe
+                      onClose={() => setSelected(null)}
+                    />
                   </InfoWindowF>
                 )}
               </MarkerF>
@@ -968,19 +983,27 @@ export default function MapPage() {
 
           {/* Public layer also shows every user who opted in to public sharing,
               even if they aren't in any of your squads. */}
-          {layer === 'public' && visiblePublicPresence.map(p => (
-            <MarkerF key={'pub-' + p.uid} position={{ lat: p.lat, lng: p.lng }} title={p.displayName + ' (public)'}
-              icon={publicPersonIcon()} onClick={() => setSelected('pub-' + p.uid)}>
-              {selected === 'pub-' + p.uid && (
-                <InfoWindowF position={{ lat: p.lat, lng: p.lng }} onCloseClick={() => setSelected(null)}>
-                  <div style={{ color: '#111' }}>
-                    <strong>{p.displayName}</strong>
-                    <div style={{ fontSize: 11, color: '#666' }}>Sharing publicly 🌎</div>
-                  </div>
-                </InfoWindowF>
-              )}
-            </MarkerF>
-          ))}
+          {layer === 'public' && visiblePublicPresence.map(p => {
+            const hasStorefront = !!(p.storefront && (p.storefront.name || p.storefront.tagline || (p.storefront.items && p.storefront.items.length)));
+            return (
+              <MarkerF key={'pub-' + p.uid} position={{ lat: p.lat, lng: p.lng }} title={p.displayName + (hasStorefront ? ' — 🛍️ Storefront' : ' (public)')}
+                icon={publicPersonIcon(hasStorefront)} onClick={() => setSelected('pub-' + p.uid)}>
+                {selected === 'pub-' + p.uid && (
+                  <InfoWindowF position={{ lat: p.lat, lng: p.lng }} onCloseClick={() => setSelected(null)}>
+                    <MapAvatarCard
+                      displayName={p.displayName}
+                      avatar={p.avatar}
+                      storefront={p.storefront}
+                      squads={[]}
+                      tier={tierForXp(p.xp || 0)}
+                      placeName={p.placeName || undefined}
+                      onClose={() => setSelected(null)}
+                    />
+                  </InfoWindowF>
+                )}
+              </MarkerF>
+            );
+          })}
 
           {/* Public squads — each marker is colored by the squad's prestige tier. */}
           {layer === 'public' && visibleSquads.map(sq => (
@@ -1552,7 +1575,9 @@ function svgMarker(fill: string, label = ''): google.maps.Icon {
   };
 }
 function squadIcon() { return svgMarker('#ec4899', '●'); }
-function publicPersonIcon() { return svgMarker('#0ea5e9', '🌎'); }
+function publicPersonIcon(hasStorefront = false) {
+  return svgMarker(hasStorefront ? '#f59e0b' : '#0ea5e9', hasStorefront ? '🛍' : '🌎');
+}
 function placeIcon(c: string) { return svgMarker(c, '★'); }
 
 // Squad markers are bigger, layered (shield + tier emoji) so testers can spot
@@ -1681,6 +1706,129 @@ function SquadHqDetail({ squad, isMember, isLeader, isPending, onRequestJoin, on
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+// Storefront-aware avatar card shown when a user marker is tapped on the
+// map. Renders the avatar, prestige tier, any squads, and (if the user has
+// a storefront with public visibility) a compact preview of their products,
+// services, and squad-only offers.
+function MapAvatarCard(props: {
+  displayName: string;
+  avatar?: AvatarConfig | any;
+  storefront?: Storefront | null;
+  squads: { id: string; name: string }[];
+  tier: typeof TIERS[number];
+  placeName?: string;
+  isMe?: boolean;
+  onClose: () => void;
+}) {
+  const { displayName, avatar, storefront, squads, tier, placeName, isMe, onClose } = props;
+  const sf = storefront && (storefront.name || storefront.tagline || storefront.bio || (storefront.items && storefront.items.length) || storefront.offers)
+    ? storefront : null;
+  const items = (sf?.items || []).slice(0, 6);
+  const kindLabel: Record<string, string> = {
+    business: 'Local business',
+    creator: 'Creator',
+    service: 'Service / freelancer',
+    venue: 'Venue',
+    personal: 'Personal',
+    none: ''
+  };
+  const headerBg = sf ? 'linear-gradient(135deg, #fb923c, #ec4899)' : 'linear-gradient(135deg, #8b5cf6, #ec4899)';
+  return (
+    <div style={{ maxWidth: 280, fontFamily: 'inherit', color: '#111' }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        padding: '8px 10px', margin: '-12px -12px 8px',
+        background: headerBg, color: '#fff', borderTopLeftRadius: 8, borderTopRightRadius: 8
+      }}>
+        <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#fff', flexShrink: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {avatar
+            ? <img src={avatarToDataUrl(avatar)} alt="" style={{ width: '100%', height: '100%' }} />
+            : <span style={{ fontSize: 20 }}>🧍</span>}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 800, fontSize: 14, lineHeight: 1.1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {isMe ? `You (${displayName})` : displayName}
+          </div>
+          <div style={{ fontSize: 11, opacity: 0.95, marginTop: 2 }}>
+            {tier.icon} {tier.name}{sf ? ' · 🛍️ Storefront' : ''}
+          </div>
+        </div>
+        <button onClick={onClose} aria-label="Close"
+          style={{ background: 'rgba(0,0,0,0.25)', color: '#fff', border: 'none', borderRadius: 999, width: 24, height: 24, cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>
+      </div>
+
+      {sf && (
+        <div style={{ marginBottom: 8 }}>
+          {sf.name && <div style={{ fontWeight: 700, fontSize: 14 }}>{sf.name}</div>}
+          {(sf.kind && kindLabel[sf.kind]) && (
+            <div style={{ fontSize: 10, color: '#7c2d12', textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 700 }}>
+              {kindLabel[sf.kind]}{sf.category ? ` · ${sf.category}` : ''}
+            </div>
+          )}
+          {sf.tagline && <div style={{ fontSize: 12, color: '#334155', marginTop: 2, fontStyle: 'italic' }}>"{sf.tagline}"</div>}
+          {sf.serviceArea && <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>📍 {sf.serviceArea}</div>}
+          {sf.bio && <div style={{ fontSize: 12, color: '#334155', marginTop: 4, whiteSpace: 'pre-wrap' }}>{sf.bio}</div>}
+
+          {items.length > 0 && (
+            <div style={{ marginTop: 6 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#7c2d12', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>Offerings</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                {items.map((it, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12, color: '#0f172a' }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      • {it.name}{it.note ? <span style={{ color: '#64748b' }}> — {it.note}</span> : null}
+                    </span>
+                    {it.price && <span style={{ fontWeight: 700, color: '#16a34a', flexShrink: 0 }}>{it.price}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {sf.offers && (
+            <div style={{ marginTop: 6, padding: '6px 8px', background: '#fef3c7', borderRadius: 6, fontSize: 12, color: '#78350f' }}>
+              🎁 <strong>Squad offer:</strong> {sf.offers}
+            </div>
+          )}
+
+          {(sf.website || sf.instagram) && (
+            <div style={{ marginTop: 6, fontSize: 11, color: '#475569', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {sf.website && <a href={sf.website.startsWith('http') ? sf.website : `https://${sf.website}`} target="_blank" rel="noopener noreferrer" style={{ color: '#7c3aed' }}>🔗 Website</a>}
+              {sf.instagram && <a href={`https://instagram.com/${sf.instagram.replace(/^@/, '')}`} target="_blank" rel="noopener noreferrer" style={{ color: '#ec4899' }}>📷 @{sf.instagram.replace(/^@/, '')}</a>}
+            </div>
+          )}
+        </div>
+      )}
+
+      {squads.length > 0 && (
+        <div style={{ marginBottom: 6 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 3 }}>Squads</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {squads.slice(0, 6).map(s => (
+              <span key={s.id} style={{ fontSize: 11, padding: '2px 8px', background: '#ede9fe', color: '#5b21b6', borderRadius: 999, fontWeight: 600 }}>
+                👥 {s.name}
+              </span>
+            ))}
+            {squads.length > 6 && <span style={{ fontSize: 11, color: '#7c3aed' }}>+{squads.length - 6} more</span>}
+          </div>
+        </div>
+      )}
+
+      {placeName && (
+        <div style={{ fontSize: 11, color: '#64748b' }}>📍 at {placeName}</div>
+      )}
+      {!sf && !isMe && (
+        <div style={{ fontSize: 11, color: '#64748b' }}>Sharing publicly 🌎</div>
+      )}
+      {!sf && isMe && (
+        <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>
+          💡 Set up your storefront on the Profile page so squadders nearby can see what you do.
+        </div>
+      )}
     </div>
   );
 }

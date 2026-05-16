@@ -35,6 +35,13 @@ export type Presence = {
   // When true, this user is visible on the world-wide "Public" layer to
   // every signed-in Squad REN user, not just their squads.
   sharePublic?: boolean;
+  // Snapshot of the user's storefront so other viewers can preview it
+  // when they tap the avatar on the map. Only attached when visibility is
+  // 'public'; squad-only / private storefronts are filtered upstream.
+  storefront?: any;
+  // Optional XP/tier snapshot so the map can render a prestige badge
+  // without a second Firestore round-trip.
+  xp?: number;
 };
 
 const demo = !db;
