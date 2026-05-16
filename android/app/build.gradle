@@ -16,8 +16,18 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            def ksPath = System.getenv("SQUADREN_KEYSTORE") ?: "${System.getProperty('user.home')}/squadren-release.keystore"
+            storeFile file(ksPath)
+            storePassword System.getenv("SQUADREN_STORE_PASS")
+            keyAlias System.getenv("SQUADREN_KEY_ALIAS") ?: "squadren"
+            keyPassword System.getenv("SQUADREN_KEY_PASS")
+        }
+    }
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
