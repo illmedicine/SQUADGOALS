@@ -70,12 +70,16 @@ export async function recordSignIn(uid: string, opts: { lat?: number; lng?: numb
       // first sign-in (geolocation was denied / timed out the first time).
       const existing = snap.data() as { country?: string | null };
       if (country && !existing.country) {
-        await setDoc(flagRef, { country, countryBackfilledAt: serverTimestamp() }, { merge: true });
-        const aggRef = doc(db!, 'meta', 'lifetimeStats');
-        await setDoc(aggRef, {
-          [`countries.${country}`]: increment(1),
-          updatedAt: serverTimestamp()
-        } as any, { merge: true });
+        try {
+          await setDoc(flagRef, { country, countryBackfilledAt: serverTimestamp() }, { merge: true });
+          const aggRef = doc(db!, 'meta', 'lifetimeStats');
+          await setDoc(aggRef, {
+            [`countries.${country}`]: increment(1),
+            updatedAt: serverTimestamp()
+          } as any, { merge: true });
+        } catch (e) {
+          console.warn('[lifetimeStats] country backfill failed:', e);
+        }
       }
       return;
     }
@@ -85,7 +89,9 @@ export async function recordSignIn(uid: string, opts: { lat?: number; lng?: numb
     const inc: any = { totalUsers: increment(1), updatedAt: serverTimestamp() };
     if (country) inc[`countries.${country}`] = increment(1);
     await setDoc(aggRef, inc, { merge: true });
-  } catch { /* offline / rules — silently ignore */ }
+  } catch (e) {
+    console.warn('[lifetimeStats] recordSignIn failed:', e);
+  }
 }
 
 // Subscribe to the global stats doc. Returns an unsubscribe.

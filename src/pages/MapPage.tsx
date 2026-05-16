@@ -1366,21 +1366,9 @@ export default function MapPage() {
             );
           })}
 
-          {/* Population Pulse: tiny green dot for every active Squadder with
-              shared coords. Lightweight CircleF (not Marker) so 100s render
-              cheaply. Tap-through is disabled. */}
-          {activeUsers.filter(u => u.uid !== user?.uid && typeof u.lat === 'number' && typeof u.lng === 'number').slice(0, 500).map(u => (
-            <CircleF
-              key={'pulse-' + u.uid}
-              center={{ lat: u.lat!, lng: u.lng! }}
-              radius={12000}
-              options={{
-                fillColor: '#22c55e', fillOpacity: 0.45,
-                strokeColor: '#16a34a', strokeOpacity: 0.9, strokeWeight: 1,
-                clickable: false
-              }}
-            />
-          ))}
+          {/* Population Pulse: live Squadders are surfaced via their actual
+              avatar markers below. The standalone green circle overlay was
+              removed — it cluttered the map without adding info. */}
         </GoogleMap>
       )}
 
