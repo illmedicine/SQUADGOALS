@@ -13,6 +13,9 @@ import { ctDemoActiveUsers } from './ctDemo';
 export type ActiveUser = {
   uid: string;
   displayName: string;
+  // Optional avatar config so map fallback pins (when only the heartbeat
+  // exists and the presence doc hasn't synced) can render the real avatar.
+  avatar?: any;
   // Optional coarse location — only present when the user has location sharing
   // turned on. The pulse counter works the same either way; this just feeds
   // the "scan the globe" discovery roster.
@@ -76,6 +79,7 @@ function syntheticPulse(): ActiveUser[] {
 export function startHeartbeat(p: {
   uid: string;
   displayName: string;
+  avatar?: any;
   lat?: number; lng?: number;
   squadCount?: number;
   squadIds?: string[];
@@ -88,6 +92,7 @@ export function startHeartbeat(p: {
       uid: p.uid,
       displayName: p.displayName,
       lastSeenMs: now,
+      ...(p.avatar ? { avatar: p.avatar } : {}),
       ...(p.squadCount !== undefined ? { squadCount: p.squadCount } : {}),
       ...(p.squadIds && p.squadIds.length ? { squadIds: p.squadIds } : {}),
       ...(typeof p.lat === 'number' ? { lat: p.lat } : {}),

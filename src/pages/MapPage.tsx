@@ -311,6 +311,7 @@ export default function MapPage() {
     return startHeartbeat({
       uid: user.uid,
       displayName: user.displayName,
+      avatar: user.avatar || defaultAvatar,
       lat: publish ? pos?.lat : undefined,
       lng: publish ? pos?.lng : undefined,
       squadCount: squadIds.length,
@@ -697,7 +698,7 @@ export default function MapPage() {
       .map(u => ({
         uid: u.uid,
         displayName: u.displayName,
-        avatar: defaultAvatar,
+        avatar: u.avatar || defaultAvatar,
         lat: u.lat as number,
         lng: u.lng as number,
         placeName: null,
@@ -1145,12 +1146,14 @@ export default function MapPage() {
           ))}
 
           {/* Public layer also shows every user who opted in to public sharing,
-              even if they aren't in any of your squads. */}
+              even if they aren't in any of your squads. Each pin is the
+              user's actual avatar so the map feels personal at a glance and
+              users flying to a target can see who they're scouting. */}
           {layer === 'public' && visiblePublicPresence.map(p => {
             const hasStorefront = !!(p.storefront && (p.storefront.name || p.storefront.tagline || (p.storefront.items && p.storefront.items.length)));
             return (
               <MarkerF key={'pub-' + p.uid} position={{ lat: p.lat, lng: p.lng }} title={p.displayName + (hasStorefront ? ' — 🛍️ Storefront' : ' (public)')}
-                icon={publicPersonIcon(hasStorefront)} onClick={() => setSelected('pub-' + p.uid)}>
+                icon={publicAvatarIcon(p.avatar || defaultAvatar, hasStorefront)} onClick={() => setSelected('pub-' + p.uid)}>
                 {selected === 'pub-' + p.uid && (
                   <InfoWindowF position={{ lat: p.lat, lng: p.lng }} onCloseClick={() => setSelected(null)}>
                     <MapAvatarCard
@@ -1730,6 +1733,38 @@ function svgMarker(fill: string, label = ''): google.maps.Icon {
 function squadIcon() { return svgMarker('#ec4899', '●'); }
 function publicPersonIcon(hasStorefront = false) {
   return svgMarker(hasStorefront ? '#8b5cf6' : '#0ea5e9', hasStorefront ? '🛍' : '🌎');
+}
+// Avatar-as-pin for the public presence layer: renders the user's actual
+// avatar inside a circular badge with a colored ring (purple for storefront
+// owners, blue for regular public users) so a glance at the map shows real
+// people, not generic icons. Falls back to the plain glyph icon if the
+// avatar fails to render (e.g. no canvas support in the env).
+function publicAvatarIcon(avatar: any, hasStorefront = false): google.maps.Icon {
+  try {
+    const dataUrl = avatarToDataUrl(avatar);
+    const ring = hasStorefront ? '#8b5cf6' : '#0ea5e9';
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="56" height="68" viewBox="0 0 56 68">
+      <defs>
+        <clipPath id="pAvClip"><circle cx="28" cy="24" r="19"/></clipPath>
+        <filter id="pAvShadow" x="-30%" y="-30%" width="160%" height="160%">
+          <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.35"/>
+        </filter>
+      </defs>
+      <g filter="url(#pAvShadow)">
+        <path d="M28 0C12.5 0 0 12 0 26.8 0 46.5 28 68 28 68S56 46.5 56 26.8C56 12 43.5 0 28 0z" fill="${ring}"/>
+        <circle cx="28" cy="24" r="21" fill="#fff"/>
+        <image href="${dataUrl}" x="9" y="5" width="38" height="38" clip-path="url(#pAvClip)" preserveAspectRatio="xMidYMid slice"/>
+        ${hasStorefront ? '<circle cx="44" cy="10" r="8" fill="#fff"/><text x="44" y="14" text-anchor="middle" font-size="11" font-family="system-ui">🛍</text>' : ''}
+      </g>
+    </svg>`;
+    return {
+      url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+      scaledSize: new google.maps.Size(40, 48),
+      anchor: new google.maps.Point(20, 48)
+    };
+  } catch {
+    return publicPersonIcon(hasStorefront);
+  }
 }
 function placeIcon(c: string) { return svgMarker(c, '★'); }
 

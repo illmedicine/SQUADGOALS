@@ -304,6 +304,7 @@ export function buffaloDemoActiveUsers(): ActiveUser[] {
   return SEED.map((u, i) => ({
     uid: u.uid,
     displayName: u.displayName,
+    avatar: u.avatar,
     lat: u.lat,
     lng: u.lng,
     squadCount: 1,
