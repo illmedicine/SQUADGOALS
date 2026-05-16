@@ -1,26 +1,39 @@
 import Avatar from '../components/Avatar';
-import { useAuth, defaultAvatar } from '../lib/AuthContext';
+import { useAuth, defaultAvatar, type Storefront } from '../lib/AuthContext';
 import { firebaseConfigured } from '../lib/firebase';
 import { Link } from 'react-router-dom';
+import { useState } from 'react';
 
 const PILLARS: { icon: string; title: string; copy: string; color: string }[] = [
   {
     icon: '☕',
     title: 'Become a regular',
     color: '#22c55e',
-    copy: 'Check in at the places you actually go to — coffee shops, bars, gas stations, the gym. Meet the other regulars and turn frequent visits into real connections.'
+    copy: 'Check in at the spots you actually go to — coffee shops, bars, gyms, salons, gas stations. Other regulars see you on the map and a real community forms around the place.'
+  },
+  {
+    icon: '🛍️',
+    title: 'Your personal storefront',
+    color: '#f97316',
+    copy: 'Promote what you do right from your Squad REN profile. Whether you run a small business, freelance, DJ on weekends, or just want to share your services — list products, prices, and offers your squad and nearby squadders can browse.'
+  },
+  {
+    icon: '🎁',
+    title: 'Exclusive deals from local venues',
+    color: '#eab308',
+    copy: 'Local businesses and venues can target active squads in their area with squad-only discounts, early invites, and pop-up promos. Be a regular, get rewarded.'
   },
   {
     icon: '🧭',
     title: 'Plan trips & track them live',
-    copy: 'Plan a trip with stops in advance. Check into each stop from your phone to earn achievements, and your squad watches your path cross the map in real time.',
+    copy: 'Plan a multi-stop trip in advance. Check into each stop from your phone to earn achievements, and your squad watches your path cross the map in real time.',
     color: '#0ea5e9'
   },
   {
     icon: '⭐',
     title: 'Real reviews from real people',
     color: '#f59e0b',
-    copy: 'Drop a public pin anywhere. Squad-mates and strangers leave star ratings and comments, just like Yelp — powered by people who keep coming back.'
+    copy: 'Drop a public pin anywhere. Squad-mates and strangers leave star ratings and comments — powered by people who actually keep coming back, not paid placements.'
   },
   {
     icon: '👻',
@@ -38,13 +51,23 @@ const PILLARS: { icon: string; title: string; copy: string; color: string }[] = 
 
 const HOW_IT_WORKS = [
   { step: '1', text: 'Customize your cartoon avatar — it becomes your map marker.' },
-  { step: '2', text: 'Create or join a squad. Public squads pin an HQ everyone can find.' },
-  { step: '3', text: 'Drop pins, leave reviews, and rack up XP to climb 7 prestige tiers.' },
-  { step: '4', text: 'Unlock crests, accessories, and bragging rights as your squad ranks up.' }
+  { step: '2', text: 'Set up your storefront — what you offer, where, and any squad-only deals.' },
+  { step: '3', text: 'Create or join a squad. Public squads pin an HQ everyone can find.' },
+  { step: '4', text: 'Drop pins, leave reviews, check in, and rack up XP to climb 7 prestige tiers.' },
+  { step: '5', text: 'Unlock crests, accessories, and discover targeted promos from venues nearby.' }
+];
+
+const STOREFRONT_KINDS: { value: NonNullable<Storefront['kind']>; label: string; hint: string }[] = [
+  { value: 'none',     label: '— Not set —',     hint: 'Hide my storefront for now.' },
+  { value: 'business', label: '🏪 Small business', hint: 'Shop, café, studio, salon, restaurant.' },
+  { value: 'service',  label: '🛠️ Service / freelance', hint: 'Trades, tutoring, photography, consulting.' },
+  { value: 'creator',  label: '🎨 Creator',       hint: 'DJ, artist, musician, content, fitness.' },
+  { value: 'venue',    label: '🏟️ Venue',         hint: 'Bar, club, gym, event space.' },
+  { value: 'personal', label: '🙂 Personal page',  hint: 'Just sharing what I\'m into.' }
 ];
 
 export default function ProfilePage() {
-  const { user, logout } = useAuth();
+  const { user, logout, updateStorefront } = useAuth();
   if (!user) return null;
   return (
     <div className="page">
@@ -72,21 +95,34 @@ export default function ProfilePage() {
         <p style={{ color: 'var(--muted)', marginTop: 4 }}>
           <strong>Squad REN</strong> is a play on <em>squadron</em> — a tight crew moving together.
           REN stands for <strong style={{ color: '#8b5cf6' }}>Reputable Engagement Network</strong>:
-          a place to grow communities around the spots you actually go to. Check in at
-          your coffee shop, your gym, your bar, your gas station — and meet the regulars
-          who hang out there too.
+          a social-map platform where real communities form around the places people actually go.
+          Become a regular at your coffee shop, gym, bar, or gas station — meet the other regulars,
+          plan trips, and earn prestige for showing up.
+        </p>
+        <p style={{ color: 'var(--muted)', marginTop: 8 }}>
+          Squad REN is also a <strong style={{ color: '#f97316' }}>marketplace for local presence</strong>.
+          Every user gets a personal storefront to promote their products, services, or side hustle.
+          Local businesses and venues can target active squads in their area with exclusive deals,
+          invites, and pop-up promotions — because the most valuable customer is the one who keeps showing up.
         </p>
         <p style={{ color: 'var(--muted)', marginTop: 8, fontSize: 13 }}>
           Think{' '}
-          <strong style={{ color: '#0ea5e9' }}>Google Timeline</strong> meets{' '}
+          <strong style={{ color: '#0ea5e9' }}>Snapchat Map</strong> meets{' '}
           <strong style={{ color: '#f59e0b' }}>Yelp</strong> meets{' '}
-          <strong style={{ color: '#ec4899' }}>Snapchat Map</strong> — with squads,
-          trip planning, and live journey tracking on top.
+          <strong style={{ color: '#22c55e' }}>Nextdoor</strong> meets a{' '}
+          <strong style={{ color: '#f97316' }}>local-business marketplace</strong> —
+          with squads, trip planning, and live presence on top.
         </p>
       </div>
 
+      <StorefrontCard
+        initial={user.storefront}
+        onSave={updateStorefront}
+        hasSquad={true /* every user can set this; squad visibility gated in the form */}
+      />
+
       <div className="card">
-        <h2 style={{ marginTop: 0 }}>Five things you can do</h2>
+        <h2 style={{ marginTop: 0 }}>What you can do here</h2>
         <div style={{ display: 'grid', gap: 10 }}>
           {PILLARS.map(p => (
             <div key={p.title} style={{
@@ -129,8 +165,9 @@ export default function ProfilePage() {
         <h2 style={{ marginTop: 0 }}>Your privacy</h2>
         <p style={{ color: 'var(--muted)', margin: 0, fontSize: 13 }}>
           Location is <strong>opt-in</strong>. Squad-only sharing keeps you visible to your crew; public
-          sharing makes you a friendly dot on the world map. Toggle either off at any time from the map
-          screen — you’re always in control.
+          sharing makes you a friendly dot on the world map. Your storefront is hidden by default —
+          flip it to <em>squad</em> or <em>public</em> only when you're ready. Toggle anything off
+          from the map screen or this page at any time.
         </p>
       </div>
 
@@ -138,6 +175,243 @@ export default function ProfilePage() {
       <p style={{ textAlign: 'center', marginTop: 16, fontSize: 12, color: 'var(--muted)' }}>
         <Link to="/privacy">Privacy Policy</Link>
       </p>
+    </div>
+  );
+}
+
+// ——— Storefront editor ———
+// Inline editable card on the profile page. Keeps state local until "Save"
+// is pressed so the user can experiment without writing junk to the server
+// on every keystroke. Visibility defaults to 'private' so nothing leaks
+// before the user opts in.
+function StorefrontCard({
+  initial,
+  onSave,
+  hasSquad
+}: {
+  initial: Storefront | undefined;
+  onSave: (s: Storefront) => Promise<void>;
+  hasSquad: boolean;
+}) {
+  const seed: Storefront = initial || { kind: 'none', visibility: 'private', items: [] };
+  const [s, setS] = useState<Storefront>(seed);
+  const [editing, setEditing] = useState<boolean>(!initial || initial.kind === 'none');
+  const [busy, setBusy] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  // Convenience setter that respects the partial-shape on items.
+  function patch(p: Partial<Storefront>) { setS(prev => ({ ...prev, ...p })); }
+  function setItem(i: number, p: Partial<NonNullable<Storefront['items']>[number]>) {
+    const items = [...(s.items || [])];
+    items[i] = { ...items[i], ...p };
+    patch({ items });
+  }
+  function addItem() {
+    const items = [...(s.items || []), { name: '', price: '', note: '' }];
+    if (items.length > 6) return; // cap to keep the UI tidy
+    patch({ items });
+  }
+  function removeItem(i: number) {
+    const items = [...(s.items || [])];
+    items.splice(i, 1);
+    patch({ items });
+  }
+
+  async function save() {
+    setBusy(true);
+    try {
+      // Trim empty items so the storage stays clean.
+      const cleaned: Storefront = {
+        ...s,
+        items: (s.items || []).filter(it => it.name?.trim()),
+        name: s.name?.trim() || '',
+        tagline: s.tagline?.trim() || '',
+        category: s.category?.trim() || '',
+        bio: s.bio?.trim() || '',
+        website: s.website?.trim() || '',
+        instagram: s.instagram?.trim() || '',
+        serviceArea: s.serviceArea?.trim() || '',
+        offers: s.offers?.trim() || ''
+      };
+      await onSave(cleaned);
+      setS(cleaned);
+      setSavedAt(Date.now());
+      setEditing(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const isSetUp = !!(initial && initial.kind && initial.kind !== 'none' && initial.name);
+  const visIcon = s.visibility === 'public' ? '🌎'
+    : s.visibility === 'squad' ? '👥' : '🔒';
+
+  // Read-only preview when not editing and the user has saved something.
+  if (!editing && isSetUp) {
+    return (
+      <div className="card" style={{ borderTop: '3px solid #f97316' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <h2 style={{ margin: 0 }}>🛍️ My Storefront</h2>
+          <button className="chip" onClick={() => setEditing(true)}>✏️ Edit</button>
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+          {visIcon} {s.visibility || 'private'} · {s.kind}
+          {savedAt && <span style={{ marginLeft: 8 }}>Saved ✓</span>}
+        </div>
+        <div style={{ marginTop: 10, fontWeight: 800, fontSize: 18 }}>{s.name}</div>
+        {s.tagline && <div style={{ color: 'var(--muted)', fontSize: 13 }}>{s.tagline}</div>}
+        {s.category && <div style={{ marginTop: 4 }}><span className="pill">{s.category}</span></div>}
+        {s.bio && <p style={{ marginTop: 8, fontSize: 13 }}>{s.bio}</p>}
+        {s.offers && (
+          <div style={{
+            marginTop: 8, padding: 10, borderRadius: 10,
+            background: '#fef3c7', border: '1px solid #fde68a', fontSize: 13
+          }}>
+            🎁 <strong>Squad offer:</strong> {s.offers}
+          </div>
+        )}
+        {s.items && s.items.length > 0 && (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>Products & services</div>
+            <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>
+              {s.items.map((it, i) => (
+                <div key={i} style={{
+                  display: 'flex', justifyContent: 'space-between', gap: 8,
+                  padding: '6px 10px', background: '#fff', border: '1px solid #eee', borderRadius: 8, fontSize: 13
+                }}>
+                  <div>
+                    <strong>{it.name}</strong>
+                    {it.note && <div style={{ color: 'var(--muted)', fontSize: 12 }}>{it.note}</div>}
+                  </div>
+                  {it.price && <div style={{ fontWeight: 700 }}>{it.price}</div>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 10, marginTop: 10, flexWrap: 'wrap', fontSize: 12 }}>
+          {s.serviceArea && <span className="pill">📍 {s.serviceArea}</span>}
+          {s.website && (
+            <a href={s.website} target="_blank" rel="noreferrer" className="pill" style={{ textDecoration: 'none' }}>
+              🔗 Website
+            </a>
+          )}
+          {s.instagram && (
+            <a href={`https://instagram.com/${s.instagram.replace(/^@/, '')}`} target="_blank" rel="noreferrer"
+              className="pill" style={{ textDecoration: 'none' }}>
+              📷 @{s.instagram.replace(/^@/, '')}
+            </a>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Editor form.
+  return (
+    <div className="card" style={{ borderTop: '3px solid #f97316' }}>
+      <h2 style={{ marginTop: 0 }}>🛍️ My Storefront</h2>
+      <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 0 }}>
+        Promote your products, services, or side hustle directly from your Squad REN profile.
+        Everything is <strong>hidden by default</strong> — pick <em>squad</em> or <em>public</em>
+        below when you're ready to show it off.
+      </p>
+
+      <label>Storefront type</label>
+      <select className="select" value={s.kind || 'none'} onChange={e => patch({ kind: e.target.value as Storefront['kind'] })}>
+        {STOREFRONT_KINDS.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}
+      </select>
+      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: -4, marginBottom: 8 }}>
+        {STOREFRONT_KINDS.find(k => k.value === (s.kind || 'none'))?.hint}
+      </div>
+
+      {s.kind && s.kind !== 'none' && (
+        <>
+          <label>Name</label>
+          <input className="input" value={s.name || ''} onChange={e => patch({ name: e.target.value })}
+            placeholder="e.g. Bean & Vine Coffee" maxLength={60} />
+
+          <label>Tagline</label>
+          <input className="input" value={s.tagline || ''} onChange={e => patch({ tagline: e.target.value })}
+            placeholder="One sentence about what you do" maxLength={120} />
+
+          <label>Category</label>
+          <input className="input" value={s.category || ''} onChange={e => patch({ category: e.target.value })}
+            placeholder="Coffee · Fitness · Tattoo · Photography…" maxLength={40} />
+
+          <label>About</label>
+          <textarea className="input" value={s.bio || ''} onChange={e => patch({ bio: e.target.value })}
+            rows={3} placeholder="Tell squadders what makes you / your spot different." maxLength={500} />
+
+          <label>Squad-only offer (optional)</label>
+          <input className="input" value={s.offers || ''} onChange={e => patch({ offers: e.target.value })}
+            placeholder="e.g. 15% off for squadders who check in this week" maxLength={140} />
+
+          <label>Service area</label>
+          <input className="input" value={s.serviceArea || ''} onChange={e => patch({ serviceArea: e.target.value })}
+            placeholder="e.g. Brooklyn + lower Manhattan" maxLength={80} />
+
+          <div className="row" style={{ gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <label>Website</label>
+              <input className="input" value={s.website || ''} onChange={e => patch({ website: e.target.value })}
+                placeholder="https://…" maxLength={120} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label>Instagram</label>
+              <input className="input" value={s.instagram || ''} onChange={e => patch({ instagram: e.target.value })}
+                placeholder="@handle" maxLength={40} />
+            </div>
+          </div>
+
+          <label style={{ marginTop: 8 }}>Products & services (up to 6)</label>
+          <div style={{ display: 'grid', gap: 6 }}>
+            {(s.items || []).map((it, i) => (
+              <div key={i} style={{
+                display: 'grid', gridTemplateColumns: '1fr 90px auto', gap: 6,
+                padding: 8, border: '1px solid #eee', borderRadius: 10, background: '#fff'
+              }}>
+                <input className="input" value={it.name} onChange={e => setItem(i, { name: e.target.value })}
+                  placeholder="Name" maxLength={50} />
+                <input className="input" value={it.price || ''} onChange={e => setItem(i, { price: e.target.value })}
+                  placeholder="Price" maxLength={20} />
+                <button type="button" className="chip" onClick={() => removeItem(i)} title="Remove">✕</button>
+                <input className="input" value={it.note || ''} onChange={e => setItem(i, { note: e.target.value })}
+                  placeholder="Optional note (e.g. by appointment)"
+                  style={{ gridColumn: '1 / span 3' }} maxLength={120} />
+              </div>
+            ))}
+            {(s.items || []).length < 6 && (
+              <button type="button" className="btn ghost" onClick={addItem} style={{ marginTop: 2 }}>
+                + Add item
+              </button>
+            )}
+          </div>
+
+          <label style={{ marginTop: 10 }}>Visibility</label>
+          <div className="layer-toggle" style={{ marginBottom: 8 }}>
+            <button type="button" className={'chip ' + ((s.visibility || 'private') === 'private' ? 'active' : '')}
+              onClick={() => patch({ visibility: 'private' })}>🔒 Hidden</button>
+            <button type="button" className={'chip ' + (s.visibility === 'squad' ? 'active' : '')}
+              disabled={!hasSquad}
+              title={hasSquad ? 'Only your squad members can see your storefront' : 'Join a squad first'}
+              onClick={() => patch({ visibility: 'squad' })}>👥 Squad-only</button>
+            <button type="button" className={'chip ' + (s.visibility === 'public' ? 'active' : '')}
+              onClick={() => patch({ visibility: 'public' })}>🌎 Public</button>
+          </div>
+        </>
+      )}
+
+      <div className="row" style={{ gap: 8, marginTop: 12 }}>
+        {isSetUp && (
+          <button className="btn secondary" onClick={() => { setS(seed); setEditing(false); }} style={{ flex: 1 }}>
+            Cancel
+          </button>
+        )}
+        <button className="btn" onClick={save} disabled={busy} style={{ flex: 2 }}>
+          {busy ? 'Saving…' : (s.kind && s.kind !== 'none' ? '💾 Save storefront' : '💾 Save')}
+        </button>
+      </div>
     </div>
   );
 }

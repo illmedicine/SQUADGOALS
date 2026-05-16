@@ -11,7 +11,7 @@ export default function LoginPage() {
     <div className="login">
       <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Squad REN" className="logo-img" />
       <h1>Squad REN</h1>
-      <p className="tagline">Find your crew. Anywhere. Anytime. ✨</p>
+      <p className="tagline">Find your crew. Discover local spots. Promote what you do. ✨</p>
 
       {firebaseConfigured ? (
         <button className="btn signin-btn" onClick={signIn}>

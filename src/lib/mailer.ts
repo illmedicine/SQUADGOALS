@@ -18,6 +18,17 @@
 import { addDoc, collection, doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
+// ——— Feature flag ———
+// Email delivery is intentionally dormant until the "Trigger Email" Firebase
+// extension is properly provisioned (Cloud Build IAM, SMTP creds, region).
+// Flip this to true — or set VITE_ENABLE_STRIKE_EMAILS=true in .env.local —
+// once the extension is live. While dormant we keep the full build pipeline
+// (HTML, attachments, recipient lookups) intact and exercise it via console
+// logs / localStorage so the in-app strike experience (message + image
+// payload on the missile doc, retaliate panel, InfoWindow) is unaffected.
+const STRIKE_EMAILS_ENABLED =
+  (import.meta.env.VITE_ENABLE_STRIKE_EMAILS as string | undefined) === 'true';
+
 export type StrikeEmailInput = {
   toEmails: string[];
   fromName: string;
@@ -104,6 +115,19 @@ export async function sendStrikeEmails(p: StrikeEmailInput): Promise<void> {
   ));
   if (recipients.length === 0) return;
   const { subject, html, text, attachments } = buildEmail(p);
+  if (!STRIKE_EMAILS_ENABLED) {
+    // Dormant mode — the Firebase Trigger Email extension is not provisioned
+    // yet. We deliberately do NOT write to the `mail` collection so half-
+    // installed extensions can't accumulate undelivered docs. The in-app
+    // strike pipeline (message + image stored on the missile doc, incoming-
+    // strikes panel, retaliate button) continues to work normally because
+    // those payloads live on the missile, not in the email.
+    const list = JSON.parse(localStorage.getItem('squadren.mail') || '[]');
+    list.unshift({ to: recipients, subject, html, text, at: Date.now(), dormant: true });
+    localStorage.setItem('squadren.mail', JSON.stringify(list.slice(0, 20)));
+    console.info('[mail] strike-email delivery is dormant; would have notified', recipients.length, 'recipient(s).');
+    return;
+  }
   if (demo) {
     // In demo mode there is no Firestore. Log so devs can see what *would*
     // have shipped, and stash recent strike emails in localStorage for QA.
@@ -126,6 +150,7 @@ export async function sendStrikeEmails(p: StrikeEmailInput): Promise<void> {
 // gmail-style addresses (anything with an @) that we have on file. Anyone
 // who signed up without an email (rare) is silently skipped.
 export async function emailsForUids(uids: string[]): Promise<string[]> {
+  if (!STRIKE_EMAILS_ENABLED) return [];
   if (demo || uids.length === 0) return [];
   const out: string[] = [];
   await Promise.all(uids.map(async uid => {

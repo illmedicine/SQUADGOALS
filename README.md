@@ -1,16 +1,22 @@
 # Squad REN
 
 **Reputable Engagement Network.** Squad REN is a play on *squadron* — a tight
-crew moving together — and the REN acronym is the mission: grow real
-communities around the places people actually go to.
+crew moving together — and the REN acronym is the mission: build real
+communities, and a real local economy, around the places people actually go.
 
-Become a regular at your coffee shop, your gym, your favorite bar, your
-gas station. Check in publicly so the other regulars know you're around.
-Plan trips with stops, check into each one to earn achievements, and let
-your squad watch your journey cross the map in real time.
+Squad REN is a social-map platform with three audiences in one app:
 
-Under the hood it's also what you get when you mash up Google Timeline,
-Yelp, and Snapchat Map — with squads, trips, and live presence on top.
+- **Squadders** become regulars at the spots they love, plan trips, drop
+  reviews, and earn prestige for showing up.
+- **Local businesses & venues** target active squads in their area with
+  exclusive deals, early invites, and pop-up promotions — because the most
+  valuable customer is the one who keeps showing up.
+- **Creators, freelancers, and side-hustlers** get a personal Squad REN
+  storefront on their profile to promote their products, services, and
+  squad-only offers to the people physically around them.
+
+Think *Snapchat Map* meets *Yelp* meets *Nextdoor* meets a local-business
+marketplace — with squads, trip planning, and live presence on top.
 
 Squad REN ships two ways from one codebase:
 
@@ -24,17 +30,18 @@ Squad REN ships two ways from one codebase:
 - ☕ **Become a regular.** Check in at the places you frequent — coffee shops,
   bars, gyms, gas stations. Other regulars see you on the map and a community
   forms around the spot.
-- 🧭 **Plan trips, track them live.** Build a multi-stop trip in advance,
-  then physically check into each stop from your phone to earn achievements.
-  Squad-mates watch your path draw across the map in real time.
-- ⭐ **Real reviews from real people.** Drop a public pin anywhere. Squad-matesty
-  forms around the spot.
+- 🛍️ **Your personal storefront.** Every profile doubles as a mini storefront.
+  Promote your shop, service, freelance gig, or creator hustle with products,
+  prices, and squad-only offers — discoverable by the squadders around you.
+- 🎁 **Local-business promos for squads.** Venues and businesses can target
+  active squads with exclusive deals, invites, and pop-ups for the regulars
+  who actually walk in the door.
 - 🧭 **Plan trips, track them live.** Build a multi-stop trip in advance,
   then physically check into each stop from your phone to earn achievements.
   Squad-mates watch your path draw across the map in real time.
 - ⭐ **Real reviews from real people.** Drop a public pin anywhere. Squad-mates
-  public sharing to appear on the world map alongside everyone else who
-  opted in. Snap-Map vibes, your rules.
+  and strangers leave ratings and comments — powered by people who keep
+  coming back, not paid placements.
 - 👥 **Squads built around you.** Create a squad, pin its HQ on the map, pick
   a tier-gated crest, and tag your interests. Discover other public squads
   near you or sharing your vibe — request to join, leader approves.
@@ -44,9 +51,22 @@ Squad REN ships two ways from one codebase:
 - 🔐 Google Sign-In via Firebase Auth (with Demo Mode fallback)
 - 🗺️ Google Maps with live squad positions, public people, public pins, and
   500 seeded demo squads to make the world feel alive
+- 🛍️ Per-user storefront on the profile page (kind, bio, items, prices,
+  squad-only offer, visibility toggle)
 - 👥 Public / private squads with crests, HQ pins, interest tags, and
   leader-approved join requests
 - 📍 Real-time presence using the browser Geolocation API
+- 🛤️ Daily path history (last 7 days, opt-in, per-day visibility)
+
+- 🔐 Google Sign-In via Firebase Auth (with Demo Mode fallback)
+- 🗺️ Google Maps with live squad positions, public people, public pins, and
+  500 seeded demo squads to make the world feel alive
+- 🛍️ Per-user storefront on the profile page (kind, bio, items, prices,
+  squad-only offer, visibility toggle)
+- 👥 Public / private squads with crests, HQ pins, interest tags, and
+  leader-approved join requests
+- 📍 Real-time presence using the browser Geolocation API
+- 🛤️ Daily path history (last 7 days, opt-in, per-day visibility)
 - 📅 Google Timeline import (Records.json, Semantic Location History, or new
   Timeline.json) — bulk pin everywhere you've been
 - 🏆 7-tier prestige system (Rookie → Mythic) that unlocks 24 squad crests

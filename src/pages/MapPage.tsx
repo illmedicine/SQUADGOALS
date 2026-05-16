@@ -34,6 +34,13 @@ import { playLaunch, playImpact } from '../lib/sfx';
 import {
   startHeartbeat, watchActiveUsers, type ActiveUser
 } from '../lib/pulse';
+import {
+  appendDailyPathPoint, shouldAppendDailyPath, watchMyRecentPaths, watchVisiblePaths,
+  setAllRecentVisibility, setDayVisibility, deleteDay, sweepOldPaths,
+  getDefaultVisibility, setDefaultVisibility, getRecordingEnabled, setRecordingEnabled,
+  pathDistanceKm as dailyPathDistanceKm, labelForDate, pathColor,
+  DAILY_PATH_RETAIN_DAYS, type DailyPath, type PathVisibility as DailyPathVis
+} from '../lib/dailyPath';
 import { sendStrikeEmails, emailsForUids, compressImage } from '../lib/mailer';
 import { squadPrestige } from '../lib/demoSeed';
 import { getLogo, DEFAULT_LOGO_ID } from '../lib/squadLogos';
@@ -128,6 +135,29 @@ export default function MapPage() {
   // Memoize the PlacesService so we don't recreate it on every effect tick.
   const placesSvcRef = useRef<google.maps.places.PlacesService | null>(null);
 
+  // ——— Daily path history ———
+  // Per-user GPS breadcrumb log, retained for the last 7 calendar days.
+  // Independent of the trips system: every signed-in user with recording
+  // turned on contributes points to today's path doc, then the panel below
+  // lets them browse / share / forget any day in the window.
+  const [myPaths, setMyPaths] = useState<DailyPath[]>([]);
+  const [peerPaths, setPeerPaths] = useState<DailyPath[]>([]);
+  const [pathRecord, setPathRecord] = useState<boolean>(
+    () => (user ? getRecordingEnabled(user.uid) : false)
+  );
+  const [pathVis, setPathVis] = useState<DailyPathVis>(
+    () => (user ? getDefaultVisibility(user.uid) : 'private')
+  );
+  // Which day-keys to render on the map (own paths only by default; tap a
+  // peer path entry to toggle it as well). Today is on by default while
+  // recording is active so the live trail draws as you move.
+  const [shownDays, setShownDays] = useState<Set<string>>(() => new Set());
+  const [shownPeerIds, setShownPeerIds] = useState<Set<string>>(() => new Set());
+  const [showPathPanel, setShowPathPanel] = useState(false);
+  // Throttle ref dedicated to daily path appends (separate from the trip
+  // throttle above so the two can run at independent cadences if needed).
+  const lastDailyPathRef = useRef<{ lat: number; lng: number; t: number } | null>(null);
+
   // ——— Virtual warfare ———
   // Active + recent missiles for the animated arcs and impact markers.
   const [missiles, setMissiles] = useState<Missile[]>([]);
@@ -191,6 +221,30 @@ export default function MapPage() {
   useEffect(() => {
     return watchSquadTrips(squadIds, setLiveTrips);
   }, [squadIds.join(',')]);
+
+  // ——— Daily path subscriptions + retention sweep ———
+  // Stream my own retained days (newest first), peer days that I'm allowed
+  // to see (squad / public), and prune anything older than the window from
+  // my own collection on boot.
+  useEffect(() => {
+    if (!user) return;
+    sweepOldPaths(user.uid).catch(() => {});
+    return watchMyRecentPaths(user.uid, setMyPaths);
+  }, [user?.uid]);
+  useEffect(() => {
+    if (!user) return;
+    return watchVisiblePaths(setPeerPaths, {
+      viewerUid: user.uid,
+      viewerSquadIds: squadIds
+    });
+  }, [user?.uid, squadIds.join(',')]);
+  // Keep local toggles in sync with whoever's logged in (handles user
+  // switching during a session).
+  useEffect(() => {
+    if (!user) return;
+    setPathRecord(getRecordingEnabled(user.uid));
+    setPathVis(getDefaultVisibility(user.uid));
+  }, [user?.uid]);
 
   // Currently-running trip we own. The map records GPS breadcrumbs to this
   // trip's path and detects stop arrivals.
@@ -312,11 +366,26 @@ export default function MapPage() {
         awardXp(user.uid, { xp: XP.CHECK_IN, checkIns: 1 }).catch(() => {});
       }
     }
+
+    // Daily path recording (independent of trips). Throttled the same way
+    // as trip paths so a single GPS tick contributes at most one breadcrumb
+    // to each system.
+    if (pathRecord) {
+      const now = Date.now();
+      const next = { lat: pos.lat, lng: pos.lng, t: now };
+      if (shouldAppendDailyPath(lastDailyPathRef.current, next)) {
+        lastDailyPathRef.current = next;
+        appendDailyPathPoint(user.uid, user.displayName, next, {
+          visibility: pathVis,
+          squadIds
+        }).catch(() => {});
+      }
+    }
     // Intentionally exclude `presence` and `myPlaces` from deps — we only
     // want to push presence when *our* position/share state changes, not on
     // every incoming squad-mate update (which was causing repeated re-renders
     // and the "snap back to my location" feel while panning).
-  }, [pos?.lat, pos?.lng, share, sharePublic, squadIds.join(','), myActiveTrip?.id]);
+  }, [pos?.lat, pos?.lng, share, sharePublic, squadIds.join(','), myActiveTrip?.id, pathRecord, pathVis]);
 
   // Stable map center: capture the first known position and never change it
   // again, so panning around doesn't get yanked back by GPS updates.
@@ -688,6 +757,19 @@ export default function MapPage() {
                     lat: pos.lat, lng: pos.lng
                   });
                   await awardXp(user.uid, { xp: XP.CHECK_IN, checkIns: 1 });
+                  // First-time check-in flips on daily path recording so the
+                  // user immediately starts building their 7-day history.
+                  if (!pathRecord) {
+                    setRecordingEnabled(user.uid, true);
+                    setPathRecord(true);
+                    // Seed today's doc with the check-in point itself so the
+                    // history panel has something to show even before they
+                    // move enough for the throttle to fire again.
+                    appendDailyPathPoint(user.uid, user.displayName,
+                      { lat: pos.lat, lng: pos.lng, t: Date.now() },
+                      { visibility: pathVis, squadIds }
+                    ).catch(() => {});
+                  }
                   setImportMsg(`✅ Checked in at ${placeName}`);
                   setTimeout(() => setImportMsg(null), 3000);
                 } catch (e) {
@@ -698,6 +780,11 @@ export default function MapPage() {
                 }
               }}
             >{checkInBusy ? '⏳ Checking in…' : '📍 Check in here'}</button>
+            <button
+              className="chip"
+              onClick={() => setShowPathPanel(true)}
+              title="View, share, or forget your last 7 days of travel"
+            >🛤️ My path</button>
             <button className="chip" onClick={() => fileRef.current?.click()}>📥 Import Maps</button>
             <button className="chip" onClick={() => setShowTutorial(true)} title="How to import Google Timeline">❓ Help</button>
             <button
@@ -981,6 +1068,35 @@ export default function MapPage() {
             />
           )}
 
+          {/* Daily-path polylines — my selected days plus any peer day I
+              toggled on from the path panel. Rendered before trip paths so
+              trip lines overlay them. Color is hashed off `${uid}_${date}`
+              so each trail stays visually distinct. */}
+          {myPaths.filter(p => shownDays.has(p.date) && (p.points?.length || 0) >= 2).map(p => (
+            <PolylineF
+              key={'mypath-' + p.id}
+              path={p.points.map(pt => ({ lat: pt.lat, lng: pt.lng }))}
+              options={{
+                strokeColor: pathColor(p.id),
+                strokeOpacity: 0.85,
+                strokeWeight: 4,
+                geodesic: false
+              }}
+            />
+          ))}
+          {peerPaths.filter(p => shownPeerIds.has(p.id) && (p.points?.length || 0) >= 2).map(p => (
+            <PolylineF
+              key={'peerpath-' + p.id}
+              path={p.points.map(pt => ({ lat: pt.lat, lng: pt.lng }))}
+              options={{
+                strokeColor: pathColor(p.id),
+                strokeOpacity: 0.55,
+                strokeWeight: 3,
+                geodesic: false
+              }}
+            />
+          ))}
+
           {/* Live trip paths: own trip in blue, squad-mate / public trips in
               violet. Stop markers show planned + reached state. */}
           {[...(myActiveTrip ? [myActiveTrip] : []), ...liveTrips.filter(t => !myActiveTrip || t.id !== myActiveTrip.id)].map(trip => {
@@ -1236,6 +1352,60 @@ export default function MapPage() {
               m.setZoom(10);
             }
             setShowPulseRoster(false);
+          }}
+        />
+      )}
+
+      {showPathPanel && user && (
+        <PathHistoryPanel
+          uid={user.uid}
+          myPaths={myPaths}
+          peerPaths={peerPaths}
+          pathRecord={pathRecord}
+          pathVis={pathVis}
+          shownDays={shownDays}
+          shownPeerIds={shownPeerIds}
+          squadIds={squadIds}
+          onClose={() => setShowPathPanel(false)}
+          onToggleRecord={(on) => {
+            setRecordingEnabled(user.uid, on);
+            setPathRecord(on);
+          }}
+          onChangeVis={async (v) => {
+            setDefaultVisibility(user.uid, v);
+            setPathVis(v);
+            // Push the new visibility onto every retained day so existing
+            // history flips along with the toggle — matches the user's
+            // expectation that "share my path" applies to the whole window.
+            await setAllRecentVisibility(user.uid, v, v === 'squad' ? squadIds : []).catch(() => {});
+          }}
+          onToggleMyDay={(date) => {
+            setShownDays(prev => {
+              const next = new Set(prev);
+              if (next.has(date)) next.delete(date); else next.add(date);
+              return next;
+            });
+          }}
+          onTogglePeer={(id) => {
+            setShownPeerIds(prev => {
+              const next = new Set(prev);
+              if (next.has(id)) next.delete(id); else next.add(id);
+              return next;
+            });
+          }}
+          onChangeDayVis={async (date, v) => {
+            await setDayVisibility(user.uid, date, v, v === 'squad' ? squadIds : []).catch(() => {});
+          }}
+          onForgetDay={async (date) => {
+            await deleteDay(user.uid, date).catch(() => {});
+            setShownDays(prev => {
+              const next = new Set(prev); next.delete(date); return next;
+            });
+          }}
+          onFlyTo={(pt) => {
+            const m = mapRef.current;
+            if (m) { m.panTo(pt); m.setZoom(15); }
+            setShowPathPanel(false);
           }}
         />
       )}
@@ -1780,3 +1950,193 @@ function DropPinModal({ pos, hasSquad, onClose, onSubmit }: {
     </div>
   );
 }
+
+// ——— Path History Panel ———
+// Lists the user's last 7 calendar days of GPS breadcrumbs and any peer
+// paths they're allowed to see. Lets the user toggle individual days onto
+// the map, change global / per-day visibility, and forget any day.
+function PathHistoryPanel({
+  uid, myPaths, peerPaths, pathRecord, pathVis,
+  shownDays, shownPeerIds, squadIds,
+  onClose, onToggleRecord, onChangeVis, onToggleMyDay,
+  onTogglePeer, onChangeDayVis, onForgetDay, onFlyTo
+}: {
+  uid: string;
+  myPaths: DailyPath[];
+  peerPaths: DailyPath[];
+  pathRecord: boolean;
+  pathVis: DailyPathVis;
+  shownDays: Set<string>;
+  shownPeerIds: Set<string>;
+  squadIds: string[];
+  onClose: () => void;
+  onToggleRecord: (on: boolean) => void;
+  onChangeVis: (v: DailyPathVis) => void;
+  onToggleMyDay: (date: string) => void;
+  onTogglePeer: (id: string) => void;
+  onChangeDayVis: (date: string, v: DailyPathVis) => void;
+  onForgetDay: (date: string) => void;
+  onFlyTo: (pt: { lat: number; lng: number }) => void;
+}) {
+  // Group peer paths by uid so multiple days from one squadder collapse
+  // into a single expandable card — keeps the list scannable when many
+  // people are sharing.
+  const peerGroups = useMemo(() => {
+    const m = new Map<string, DailyPath[]>();
+    for (const p of peerPaths) {
+      const list = m.get(p.uid) || [];
+      list.push(p);
+      m.set(p.uid, list);
+    }
+    return [...m.entries()].map(([puid, list]) => ({
+      uid: puid,
+      displayName: list[0]?.displayName || 'Squadder',
+      paths: list.sort((a, b) => (a.date < b.date ? 1 : -1))
+    }));
+  }, [peerPaths]);
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 520, maxHeight: '85dvh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <h2 style={{ margin: 0 }}>🛤️ My path · last {DAILY_PATH_RETAIN_DAYS} days</h2>
+          <button onClick={onClose} aria-label="Close"
+            style={{ background: '#eee', border: 'none', borderRadius: 999, width: 32, height: 32, cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
+        </div>
+        <p style={{ color: 'var(--muted)', fontSize: 12, marginTop: 4 }}>
+          Squad REN records a GPS breadcrumb every {Math.round(DAILY_PATH_MIN_S)} seconds or 25 m while recording is on,
+          and only keeps the last {DAILY_PATH_RETAIN_DAYS} days. You can share each day with your squad or the world,
+          or forget any day instantly.
+        </p>
+
+        <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>Record my path</label>
+        <div className="layer-toggle" style={{ marginBottom: 8 }}>
+          <button type="button"
+            className={'chip ' + (pathRecord ? 'active' : '')}
+            onClick={() => onToggleRecord(true)}>● Recording</button>
+          <button type="button"
+            className={'chip ' + (!pathRecord ? 'active' : '')}
+            onClick={() => onToggleRecord(false)}>■ Paused</button>
+        </div>
+
+        <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>Default sharing for new days</label>
+        <div className="layer-toggle" style={{ marginBottom: 12 }}>
+          <button type="button"
+            className={'chip ' + (pathVis === 'private' ? 'active' : '')}
+            onClick={() => onChangeVis('private')}>🔒 Private</button>
+          <button type="button"
+            className={'chip ' + (pathVis === 'squad' ? 'active' : '')}
+            disabled={squadIds.length === 0}
+            title={squadIds.length === 0 ? 'Join a squad first' : 'Only your squad members can see your path'}
+            onClick={() => onChangeVis('squad')}>👥 Squad{squadIds.length === 0 ? ' 🔒' : ''}</button>
+          <button type="button"
+            className={'chip ' + (pathVis === 'public' ? 'active' : '')}
+            onClick={() => onChangeVis('public')}>🌎 Public</button>
+        </div>
+
+        <h3 style={{ marginBottom: 6 }}>Your days</h3>
+        {myPaths.length === 0 && (
+          <div style={{ fontSize: 13, color: 'var(--muted)', padding: 8 }}>
+            No path recorded yet — turn on recording and start moving. (Or tap
+            <strong> Check in here</strong> on the map to seed today's path.)
+          </div>
+        )}
+        {myPaths.map(p => {
+          const km = dailyPathDistanceKm(p.points);
+          const showing = shownDays.has(p.date);
+          const first = p.points?.[0];
+          const visIcon = p.visibility === 'public' ? '🌎' : p.visibility === 'squad' ? '👥' : '🔒';
+          return (
+            <div key={p.id} style={{
+              border: '1px solid #e5e7eb', borderRadius: 10, padding: 10,
+              marginBottom: 8, background: showing ? '#f5f3ff' : '#fff'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{
+                  width: 12, height: 12, borderRadius: 999,
+                  background: pathColor(p.id), flex: '0 0 12px'
+                }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>{labelForDate(p.date)}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                    {p.points?.length || 0} points · {km.toFixed(2)} km · {visIcon} {p.visibility}
+                  </div>
+                </div>
+                <button className={'chip ' + (showing ? 'active' : '')}
+                  onClick={() => onToggleMyDay(p.date)}
+                  title={showing ? 'Hide on map' : 'Show on map'}>
+                  {showing ? '◉ Shown' : '○ Show'}
+                </button>
+              </div>
+              <div className="layer-toggle" style={{ marginTop: 8 }}>
+                <button type="button"
+                  className={'chip ' + (p.visibility === 'private' ? 'active' : '')}
+                  onClick={() => onChangeDayVis(p.date, 'private')}>🔒</button>
+                <button type="button"
+                  className={'chip ' + (p.visibility === 'squad' ? 'active' : '')}
+                  disabled={squadIds.length === 0}
+                  onClick={() => onChangeDayVis(p.date, 'squad')}>👥</button>
+                <button type="button"
+                  className={'chip ' + (p.visibility === 'public' ? 'active' : '')}
+                  onClick={() => onChangeDayVis(p.date, 'public')}>🌎</button>
+                {first && (
+                  <button type="button" className="chip"
+                    onClick={() => onFlyTo({ lat: first.lat, lng: first.lng })}>
+                    🎯 Jump
+                  </button>
+                )}
+                <button type="button" className="chip"
+                  onClick={() => {
+                    if (window.confirm(`Forget ${labelForDate(p.date)} permanently?`)) {
+                      onForgetDay(p.date);
+                    }
+                  }}
+                  title="Delete this day's path">🗑️ Forget</button>
+              </div>
+            </div>
+          );
+        })}
+
+        {peerGroups.length > 0 && (
+          <>
+            <h3 style={{ marginTop: 16, marginBottom: 6 }}>Shared with you</h3>
+            {peerGroups.map(g => (
+              <div key={g.uid} style={{
+                border: '1px solid #e5e7eb', borderRadius: 10, padding: 10,
+                marginBottom: 8, background: '#fff'
+              }}>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>{g.displayName}</div>
+                {g.paths.map(p => {
+                  const km = dailyPathDistanceKm(p.points);
+                  const showing = shownPeerIds.has(p.id);
+                  const first = p.points?.[0];
+                  return (
+                    <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
+                      <span style={{ width: 10, height: 10, borderRadius: 999, background: pathColor(p.id) }} />
+                      <div style={{ flex: 1, fontSize: 12 }}>
+                        <strong>{labelForDate(p.date)}</strong>
+                        <span style={{ color: 'var(--muted)', marginLeft: 6 }}>
+                          {p.points?.length || 0} pts · {km.toFixed(2)} km · {p.visibility === 'public' ? '🌎' : '👥'}
+                        </span>
+                      </div>
+                      {first && (
+                        <button className="chip"
+                          onClick={() => onFlyTo({ lat: first.lat, lng: first.lng })}>🎯</button>
+                      )}
+                      <button className={'chip ' + (showing ? 'active' : '')}
+                        onClick={() => onTogglePeer(p.id)}>{showing ? '◉' : '○'}</button>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Pretty label for the breadcrumb cadence shown in the panel. Inline so we
+// don't have to thread the constant through props.
+const DAILY_PATH_MIN_S = 10;

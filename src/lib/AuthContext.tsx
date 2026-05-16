@@ -14,6 +14,30 @@ export type AppUser = {
   email: string | null;
   photoURL: string | null;
   avatar?: AvatarConfig;
+  storefront?: Storefront;
+};
+
+// Personal "storefront" — every user can promote what they offer (a small
+// business, freelance service, side hustle, creator gig, or just the place
+// they hang out). Surfaces on the profile page and is queryable later for
+// squad-targeted promos / discovery. All fields optional; an empty object
+// just means the user hasn't filled it in yet.
+export type Storefront = {
+  kind?: 'business' | 'creator' | 'service' | 'venue' | 'personal' | 'none';
+  name?: string;                       // brand / shop name
+  tagline?: string;                    // one-liner
+  category?: string;                   // Coffee, Fitness, Tattoo, Music, etc.
+  bio?: string;                        // longer description
+  website?: string;
+  instagram?: string;
+  serviceArea?: string;                // "Brooklyn + lower Manhattan"
+  offers?: string;                     // promo / discount line aimed at squads
+  // Up to ~6 quick "products / services" pills for at-a-glance browsing.
+  items?: Array<{ name: string; price?: string; note?: string }>;
+  // Whether other squadders can see this storefront. Off by default until
+  // the user explicitly opts in.
+  visibility?: 'private' | 'squad' | 'public';
+  updatedAt?: number;
 };
 
 export type AvatarConfig = {
@@ -53,6 +77,7 @@ type Ctx = {
   signInDemo: (name: string) => void;
   logout: () => Promise<void>;
   updateAvatar: (a: AvatarConfig) => Promise<void>;
+  updateStorefront: (s: Storefront) => Promise<void>;
 };
 
 const AuthContext = createContext<Ctx>(null as unknown as Ctx);
@@ -183,8 +208,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     else localStorage.setItem('squadren.demoUser', JSON.stringify(next));
   }
 
+  // Persist storefront edits the same way as avatar — Firestore when we're
+  // online, localStorage in demo mode. Stamped with `updatedAt` so the
+  // discovery layer can sort by freshness later.
+  async function updateStorefront(s: Storefront) {
+    if (!user) return;
+    const stamped: Storefront = { ...s, updatedAt: Date.now() };
+    const next = { ...user, storefront: stamped };
+    setUser(next);
+    if (db && rawUser) {
+      await setDoc(doc(db, 'users', rawUser.uid), { storefront: stamped }, { merge: true });
+    } else {
+      localStorage.setItem('squadren.demoUser', JSON.stringify(next));
+    }
+  }
+
   const value = useMemo<Ctx>(() => ({
-    user, rawUser, loading, error, signIn, signInDemo, logout, updateAvatar
+    user, rawUser, loading, error, signIn, signInDemo, logout, updateAvatar, updateStorefront
   }), [user, rawUser, loading, error]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
