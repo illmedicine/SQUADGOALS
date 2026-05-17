@@ -145,6 +145,12 @@ export default function ProfilePage() {
           >
             ▶ Watch the commercial
           </button>
+          <Link to="/labs" className="btn sim-labs-btn" aria-label="Open Simulation Labs">
+            🧪 Simulation Labs
+          </Link>
+          <Link to="/storefront" className="btn storefront-cta-btn" aria-label="Manage my storefront">
+            🛍️ Manage Storefront
+          </Link>
           <span style={{ fontSize: 12, color: 'var(--muted)' }}>
             30s · animated · <em>"What's in your squad?"</em>
           </span>

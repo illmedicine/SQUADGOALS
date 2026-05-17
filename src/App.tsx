@@ -10,7 +10,10 @@ import TripsPage from './pages/TripsPage';
 import ProfilePage from './pages/ProfilePage';
 import PrivacyPage from './pages/PrivacyPage';
 import VisitedPlacesPage from './pages/VisitedPlacesPage';
+import SimulationLabsPage from './pages/SimulationLabsPage';
+import StorefrontPage from './pages/StorefrontPage';
 import NavBar from './components/NavBar';
+import StorefrontAnnouncements from './components/StorefrontAnnouncements';
 
 function Protected({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth();
@@ -34,11 +37,14 @@ export default function App() {
           <Route path="/leaderboard" element={<Protected><LeaderboardPage /></Protected>} />
           <Route path="/trips" element={<Protected><TripsPage /></Protected>} />
           <Route path="/profile" element={<Protected><ProfilePage /></Protected>} />
+          <Route path="/labs" element={<Protected><SimulationLabsPage /></Protected>} />
+          <Route path="/storefront" element={<Protected><StorefrontPage /></Protected>} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
       {user && <NavBar />}
+      {user && <StorefrontAnnouncements />}
     </div>
   );
 }

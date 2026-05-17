@@ -10,6 +10,7 @@ import { getLogo, DEFAULT_LOGO_ID } from '../lib/squadLogos';
 import { squadPrestige, type SquadStats } from '../lib/demoSeed';
 import { haversine } from '../lib/geo';
 import { useLocation } from '../lib/useLocation';
+import { watchPublicStorefronts, type PublicStorefront } from '../lib/storefronts';
 
 // What can we rank squads on? Each metric resolves to a number from a
 // SquadStats record + an icon for the chip.
@@ -83,8 +84,10 @@ export default function LeaderboardPage() {
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [tierFilter, setTierFilter] = useState<number | null>(null);
   const { pos } = useLocation({ enabled: !!user });
+  const [storefronts, setStorefronts] = useState<PublicStorefront[]>([]);
 
   useEffect(() => watchPublicSquadsLive(setPub), []);
+  useEffect(() => watchPublicStorefronts(setStorefronts), []);
 
   // Merge real public squads with the seeded demo squads so the world
   // feels populated. De-dupe by id (real squads win).
@@ -319,6 +322,85 @@ export default function LeaderboardPage() {
         XP is earned by check-ins ({tierForXp(0).name === 'Rookie' ? 10 : 10} per), public pins (25),
         reviews (8) and comments (3). Demo squads simulate organic activity.
       </p>
+
+      <StorefrontsBoard rows={storefronts} />
     </div>
   );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Storefronts board — newest first, with city/state badges.
+ * Surfaced underneath the squads board so every Squad REN user sees newly
+ * opened storefronts the moment they sign in.
+ * ────────────────────────────────────────────────────────────────────────── */
+function StorefrontsBoard({ rows }: { rows: PublicStorefront[] }) {
+  const top = rows.slice(0, 12);
+  return (
+    <div className="card storefront-board">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h2 style={{ margin: 0 }}>🛍️ Newest Storefronts</h2>
+        <Link to="/storefront" className="chip">Open my storefront →</Link>
+      </div>
+      <p style={{ color: 'var(--muted)', fontSize: 12, marginTop: 4 }}>
+        Brand new vendors on Squad REN — newest first.
+      </p>
+      {top.length === 0 ? (
+        <div className="empty">No public storefronts yet. Be the first!</div>
+      ) : (
+        <div className="storefront-board-list">
+          {top.map((s, i) => {
+            const loc = [s.city, s.state].filter(Boolean).join(', ');
+            const isFresh = s.publishedAt && (Date.now() - s.publishedAt) < 24 * 60 * 60 * 1000;
+            const glow = !!s.perks?.storefrontGlow;
+            return (
+              <div key={s.uid} className={'storefront-board-row' + (glow ? ' glow' : '')}>
+                <div className="storefront-board-rank">#{i + 1}</div>
+                <div className="storefront-board-logo" style={{
+                  backgroundImage: s.logoImageDataUrl ? `url(${s.logoImageDataUrl})` : undefined
+                }}>
+                  {!s.logoImageDataUrl && <span>🛍️</span>}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <strong style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {s.name || 'Untitled storefront'}
+                    </strong>
+                    {s.perks?.prestigeBadge && (
+                      <span className="pill" style={{
+                        background: s.perks.badgeColor || '#fde047',
+                        color: '#1f1b3a', fontSize: 10
+                      }}>{s.perks.prestigeBadge}</span>
+                    )}
+                    {isFresh && <span className="pill good" style={{ fontSize: 10 }}>NEW</span>}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                    {s.category || s.kind || '—'}
+                    {loc && ' · 📍 ' + loc}
+                    {s.publishedAt && ' · ' + relativeTime(s.publishedAt)}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontWeight: 800, fontSize: 13 }}>{s.ownerName}</div>
+                  {(s.items || []).length > 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                      {(s.items || []).length} item{(s.items || []).length === 1 ? '' : 's'}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function relativeTime(ms: number): string {
+  const diff = Date.now() - ms;
+  if (diff < 60_000) return 'just now';
+  if (diff < 3600_000) return Math.floor(diff / 60_000) + 'm ago';
+  if (diff < 86_400_000) return Math.floor(diff / 3600_000) + 'h ago';
+  if (diff < 7 * 86_400_000) return Math.floor(diff / 86_400_000) + 'd ago';
+  return new Date(ms).toLocaleDateString();
 }

@@ -198,9 +198,17 @@ export default function SquadsPage() {
     <div className="page">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <h1 style={{ margin: 0 }}>Squads</h1>
-        <Link to="/leaderboard" className="btn ghost" style={{ width: 'auto', textDecoration: 'none' }}>
-          🏆 Leaderboard
-        </Link>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Link to="/storefront" className="btn storefront-cta-btn" style={{ width: 'auto', padding: '8px 12px' }}>
+            🛍️ Storefront
+          </Link>
+          <Link to="/labs" className="btn sim-labs-btn" style={{ width: 'auto', padding: '8px 12px' }}>
+            🧪 Sim Labs
+          </Link>
+          <Link to="/leaderboard" className="btn ghost" style={{ width: 'auto', textDecoration: 'none' }}>
+            🏆 Leaderboard
+          </Link>
+        </div>
       </div>
 
       <div className="card">

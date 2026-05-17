@@ -23,6 +23,33 @@ export type AppUser = {
 // they hang out). Surfaces on the profile page and is queryable later for
 // squad-targeted promos / discovery. All fields optional; an empty object
 // just means the user hasn't filled it in yet.
+export type StorefrontPerks = {
+  // Awarded when a user redeems an Indeed-recruit promo (e.g. NAILSON10).
+  prestigeBadge?: string;     // e.g. "🌟 Founding Vendor"
+  badgeColor?: string;        // hex, drives the badge ring + sparkle color
+  storefrontGlow?: boolean;   // animated outer glow + corner shine
+  animatedAvatar?: boolean;   // outfit-aura on the user's avatar everywhere
+  exclusiveOutfit?: string;   // human-readable outfit unlock label
+  earnedAt?: number;
+  source?: string;            // which promo code unlocked it
+};
+export type StorefrontItem = {
+  // Identity is optional so the legacy quick-pill shape stays compatible
+  // with the new marketplace shape under a single union-free type.
+  id?: string;
+  name: string;
+  // Price accepts either a number (preferred, sortable) or a string for
+  // back-compat with the original "Profile > My Storefront" inline editor
+  // that stored prices like "$25" or "from $50".
+  price?: number | string;
+  priceText?: string;         // optional display override (e.g. "from $25")
+  stock?: number;
+  description?: string;
+  note?: string;              // legacy alias for `description`
+  imageDataUrl?: string;      // base64 data URL (resized client-side)
+  category?: string;
+  sku?: string;
+};
 export type Storefront = {
   kind?: 'business' | 'creator' | 'service' | 'venue' | 'personal' | 'none';
   name?: string;                       // brand / shop name
@@ -34,10 +61,24 @@ export type Storefront = {
   serviceArea?: string;                // "Brooklyn + lower Manhattan"
   offers?: string;                     // promo / discount line aimed at squads
   // Up to ~6 quick "products / services" pills for at-a-glance browsing.
-  items?: Array<{ name: string; price?: string; note?: string }>;
+  items?: StorefrontItem[];
   // Whether other squadders can see this storefront. Off by default until
   // the user explicitly opts in.
   visibility?: 'private' | 'squad' | 'public';
+  // New marketplace fields.
+  city?: string;
+  state?: string;
+  country?: string;
+  coverImageDataUrl?: string;
+  logoImageDataUrl?: string;
+  hours?: string;
+  phone?: string;
+  email?: string;
+  perks?: StorefrontPerks;
+  promoCodesRedeemed?: string[];
+  // Lifecycle timestamps used by the announcement feed.
+  firstOpenedAt?: number;     // first time visibility flipped off 'private'
+  lastPromoAt?: number;
   updatedAt?: number;
 };
 
