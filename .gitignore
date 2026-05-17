@@ -20,3 +20,5 @@ android/local.properties
 android/app/release/
 android/app/debug/
 *.keystore
+
+tsc-out.txt
