@@ -5,57 +5,59 @@ import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import SquadCommercial from '../components/SquadCommercial';
 
+const RIDE_ROUTES = [
+  { icon: '🗽', label: 'NYC Shopping Turnaround', price: '$45/seat', detail: 'Leave 6 AM · Back by 1 AM' },
+  { icon: '🎢', label: 'Darien Lake',             price: '$18/seat', detail: 'Daily · Full day run' },
+  { icon: '🇨🇦', label: 'Toronto',                price: '$45/seat', detail: 'Via Peace Bridge · Hamilton' },
+  { icon: '🌊', label: 'Clifton Hill / Niagara',  price: '$15/seat', detail: 'Falls + casino strip' },
+  { icon: '🔐', label: 'Regional Jails Run',      price: '$18/seat', detail: 'Erie County · Alden · Lancaster' },
+];
+
 const PILLARS: { icon: string; title: string; copy: string; color: string }[] = [
   {
-    icon: '☕',
-    title: 'Become a regular',
+    icon: '🚐',
+    title: 'Group transit — cheaper, together',
+    color: '#8b5cf6',
+    copy: 'Split the cost across your squad. A seat on the NYC turnaround run is $45 — vs. $140+ Uber XL split fewer ways. 10-van live fleet, real-time map tracking, pickup from your Squad HQ.'
+  },
+  {
+    icon: '🎟️',
+    title: 'Events → ride in one tap',
+    color: '#0ea5e9',
+    copy: 'Browse live concerts and sports events across Buffalo and Toronto. Rally your squad, then tap "Book a Ride" — destination and date pre-fill automatically on the Rides screen.'
+  },
+  {
+    icon: '📍',
+    title: 'See who\'s live around you',
     color: '#22c55e',
-    copy: 'Check in at the spots you actually go to — coffee shops, bars, gyms, salons, gas stations. Other regulars see you on the map and a real community forms around the place.'
+    copy: 'A real-time map of every Squad REN user nearby. Tap anyone to wave and break the ice — no DMs, no follows, just hello.'
   },
   {
     icon: '🛍️',
     title: 'Your personal storefront',
     color: '#f97316',
-    copy: 'Promote what you do right from your Squad REN profile. Whether you run a small business, freelance, DJ on weekends, or just want to share your services — list products, prices, and offers your squad and nearby squadders can browse.'
+    copy: 'Promote your hustle from your profile — small business, freelance, creator, or venue. List products and squad-only deals for people physically around you.'
   },
   {
-    icon: '🎁',
-    title: 'Exclusive deals from local venues',
-    color: '#eab308',
-    copy: 'Local businesses and venues can target active squads in their area with squad-only discounts, early invites, and pop-up promos. Be a regular, get rewarded.'
-  },
-  {
-    icon: '🧭',
-    title: 'Plan trips & track them live',
-    copy: 'Plan a multi-stop trip in advance. Check into each stop from your phone to earn achievements, and your squad watches your path cross the map in real time.',
-    color: '#0ea5e9'
-  },
-  {
-    icon: '⭐',
-    title: 'Real reviews from real people',
-    color: '#f59e0b',
-    copy: 'Drop a public pin anywhere. Squad-mates and strangers leave star ratings and comments — powered by people who actually keep coming back, not paid placements.'
-  },
-  {
-    icon: '👻',
-    title: 'See your crew right now',
+    icon: '🏆',
+    title: 'Earn real-world prestige',
     color: '#ec4899',
-    copy: 'Opt-in live location like Snap Map. See your squad on the map in real time, plus everyone who chose to share publicly with the world.'
+    copy: 'Check-ins, reviews, and trips compound into a prestige tier that unlocks perks at local venues and exclusive squad deals. Ride more, earn more.'
   },
   {
     icon: '👥',
     title: 'Squads built around you',
-    color: '#8b5cf6',
-    copy: 'Form a squad with the regulars at your local spot, or with strangers who share your interests. Pin an HQ, request to join others, level up together.'
+    color: '#eab308',
+    copy: 'Form a squad with regulars at your local spot. Pin an HQ, request to join others, level up together — and roll together on group rides.'
   }
 ];
 
 const HOW_IT_WORKS = [
-  { step: '1', text: 'Customize your cartoon avatar — it becomes your map marker.' },
-  { step: '2', text: 'Set up your storefront — what you offer, where, and any squad-only deals.' },
-  { step: '3', text: 'Create or join a squad. Public squads pin an HQ everyone can find.' },
-  { step: '4', text: 'Drop pins, leave reviews, check in, and rack up XP to climb 7 prestige tiers.' },
-  { step: '5', text: 'Unlock crests, accessories, and discover targeted promos from venues nearby.' }
+  { step: '1', text: 'Create or join a squad and pin a Squad HQ — your group\'s charter pickup point.' },
+  { step: '2', text: 'Browse Venues for live events in Buffalo and Toronto, rally your squad in one tap.' },
+  { step: '3', text: 'Book a Ride — choose a static route or book a private charter at $350 flat.' },
+  { step: '4', text: 'Watch your van approach on the live fleet map — 10 vans, real-time positions.' },
+  { step: '5', text: 'Check in at spots, drop reviews, rack up XP, unlock prestige tiers and venue deals.' }
 ];
 
 const STOREFRONT_KINDS: { value: NonNullable<Storefront['kind']>; label: string; hint: string }[] = [
@@ -92,52 +94,67 @@ export default function ProfilePage() {
         </Link>
       </div>
 
-      <div className="card" style={{ background: 'linear-gradient(135deg, #8b5cf622, #ec489922, #f9731622)' }}>
-        <div style={{ fontSize: 12, fontWeight: 800, color: '#5b21b6', textTransform: 'uppercase', letterSpacing: 0.8 }}>About Squad REN</div>
+      <div className="card" style={{ background: 'linear-gradient(135deg, #8b5cf622, #0ea5e922, #22c55e11)' }}>
+        <div style={{ fontSize: 12, fontWeight: 800, color: '#5b21b6', textTransform: 'uppercase', letterSpacing: 0.8 }}>About Squadron</div>
         <h2 style={{ margin: '6px 0 8px', fontSize: 22, lineHeight: 1.15 }}>
-          The live-presence social map. <span style={{ color: '#8b5cf6' }}>Your squad.</span> <span style={{ color: '#f97316' }}>Your local economy.</span>
+          Group transit, redefined. <span style={{ color: '#8b5cf6' }}>Your squad.</span> <span style={{ color: '#0ea5e9' }}>Your ride.</span>
         </h2>
         <p style={{ color: 'var(--muted)', marginTop: 4 }}>
-          Squad REN is the <strong style={{ color: '#0ea5e9' }}>real-time map of everyone live near you</strong> — think Bump-style
-          discovery, but with <strong style={{ color: '#8b5cf6' }}>squads</strong> to roll with and a{' '}
-          <strong style={{ color: '#f97316' }}>local marketplace</strong> built into every profile.
+          Squadron transforms the traditional rideshare model by merging <strong style={{ color: '#8b5cf6' }}>live-presence social networking</strong> with{' '}
+          <strong style={{ color: '#0ea5e9' }}>dynamic, high-capacity group transit</strong>. Book a seat on a shared route — or charter a full van — and ride with your squad.
         </p>
 
-        <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+        {/* Route pricing grid */}
+        <div style={{ display: 'grid', gap: 6, marginTop: 12 }}>
+          {RIDE_ROUTES.map(r => (
+            <div key={r.label} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '8px 12px', background: '#fff', borderRadius: 10,
+              border: '1px solid rgba(139,92,246,0.12)'
+            }}>
+              <span style={{ fontSize: 20 }}>{r.icon}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 13 }}>{r.label}</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.detail}</div>
+              </div>
+              <span style={{ fontWeight: 900, color: '#8b5cf6', fontSize: 14 }}>{r.price}</span>
+            </div>
+          ))}
+          <div style={{ padding: '8px 12px', background: 'rgba(139,92,246,0.06)', borderRadius: 10, border: '1px dashed #8b5cf6', fontSize: 12, color: '#5b21b6', textAlign: 'center' }}>
+            🚐 Private charter · Any destination · <strong>$350 flat</strong>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
           <div style={{ padding: '10px 12px', background: '#fff', borderRadius: 12, borderLeft: '4px solid #0ea5e9' }}>
-            <div style={{ fontWeight: 800, color: '#0ea5e9', fontSize: 13 }}>📍 See who's live around you</div>
+            <div style={{ fontWeight: 800, color: '#0ea5e9', fontSize: 13 }}>🎟️ Venues → Rides in one tap</div>
             <div style={{ fontSize: 13, color: '#334155', marginTop: 3, lineHeight: 1.4 }}>
-              A real-time map of every Squad REN user nearby. Tap anyone to fly to them and 👋 wave to break the ice — no DMs, no follows, just hello.
+              Browse live concerts and sports events in Buffalo and Toronto. Rally your squad, then tap "Book a Ride" — destination and date pre-fill automatically.
             </div>
           </div>
 
           <div style={{ padding: '10px 12px', background: '#fff', borderRadius: 12, borderLeft: '4px solid #8b5cf6' }}>
-            <div style={{ fontWeight: 800, color: '#8b5cf6', fontSize: 13 }}>🛰️ Move as a Squadron</div>
+            <div style={{ fontWeight: 800, color: '#8b5cf6', fontSize: 13 }}>🛰️ Live fleet on the map</div>
             <div style={{ fontSize: 13, color: '#334155', marginTop: 3, lineHeight: 1.4 }}>
-              Roll deeper than solo. Create or join Squads to coordinate physical meetups on campuses,
-              festivals, or downtown hubs. <em>Squad location stays squad-only.</em>
-            </div>
-          </div>
-
-          <div style={{ padding: '10px 12px', background: '#fff', borderRadius: 12, borderLeft: '4px solid #ec4899' }}>
-            <div style={{ fontWeight: 800, color: '#ec4899', fontSize: 13 }}>🏆 Earn Real-World Prestige</div>
-            <div style={{ fontSize: 13, color: '#334155', marginTop: 3, lineHeight: 1.4 }}>
-              Become a regular at the spots you love. Check-ins, reviews, and trips compound into a
-              prestige tier that unlocks perks at local venues.
+              10-van fleet. Track your van in real time on the Map tab — blue dots for active routes, pickup from your Squad HQ.
             </div>
           </div>
 
           <div style={{ padding: '10px 12px', background: '#fff', borderRadius: 12, borderLeft: '4px solid #f97316' }}>
-            <div style={{ fontWeight: 800, color: '#f97316', fontSize: 13 }}>🛍️ The Local Presence Marketplace</div>
+            <div style={{ fontWeight: 800, color: '#f97316', fontSize: 13 }}>🛍️ Local Presence Marketplace</div>
             <div style={{ fontSize: 13, color: '#334155', marginTop: 3, lineHeight: 1.4 }}>
-              Every profile is a mini storefront. Promote your hustle, products, or services to the
-              people physically around you — and local businesses target nearby Squads with real-time
-              offers. The ultimate metric: <strong>physical presence</strong>.
+              Every profile is a mini storefront. Promote your hustle to people physically around you — squad-only deals, live location, real prestige tiers.
             </div>
           </div>
         </div>
 
         <div className="about-cta">
+          <Link to="/rides" className="btn" style={{ background: 'linear-gradient(135deg, #8b5cf6, #0ea5e9)', color: '#fff', border: 'none', textDecoration: 'none' }}>
+            🚐 Book a Ride
+          </Link>
+          <Link to="/venues" className="btn" style={{ background: 'linear-gradient(135deg, #0ea5e9, #22c55e)', color: '#fff', border: 'none', textDecoration: 'none' }}>
+            🎟️ Browse Venues
+          </Link>
           <button
             className="btn watch-commercial"
             onClick={() => setShowCommercial(true)}
@@ -147,9 +164,6 @@ export default function ProfilePage() {
           </button>
           <Link to="/labs" className="btn sim-labs-btn" aria-label="Open Simulation Labs">
             🧪 Simulation Labs
-          </Link>
-          <Link to="/storefront" className="btn storefront-cta-btn" aria-label="Manage my storefront">
-            🛍️ Manage Storefront
           </Link>
           <span style={{ fontSize: 12, color: 'var(--muted)' }}>
             30s · animated · <em>"What's in your squad?"</em>

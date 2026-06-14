@@ -50,18 +50,18 @@ type SimMember = {
 };
 
 const PRESETS = [
-  { id: 'pizza',  label: '🍕 Tony\'s Pizza',     hint: 'Downtown · 0.4 mi avg' },
-  { id: 'beach',  label: '🏖️ Sunset Beach',     hint: 'Coast · 3.2 mi avg' },
-  { id: 'arena',  label: '🏟️ The Arena',        hint: 'Stadium district · 5.6 mi avg' },
-  { id: 'park',   label: '🌳 Riverside Park',   hint: 'Greenway · 1.8 mi avg' },
-  { id: 'bar',    label: '🍻 The Watering Hole', hint: 'Nightlife strip · 0.9 mi avg' }
+  { id: 'nyc',      label: '🗽 NYC Shopping Run',       hint: 'Buffalo → NYC · 6 AM departure · $45/seat' },
+  { id: 'toronto',  label: '🇨🇦 Toronto Night Out',      hint: 'Via Peace Bridge · Hamilton · $45/seat' },
+  { id: 'darien',   label: '🎢 Darien Lake',             hint: 'Full day trip · $18/seat' },
+  { id: 'niagara',  label: '🌊 Clifton Hill / Niagara',  hint: 'Falls + casino strip · $15/seat' },
+  { id: 'concert',  label: '🎸 Concert Run',             hint: 'Squad charter · KeyBank Center · $350 flat' },
 ];
 
 const MODE_META: Record<Mode, { icon: string; label: string; mph: [number, number] }> = {
-  walk:    { icon: '🚶', label: 'Walking', mph: [2.6, 3.6] },
-  bike:    { icon: '🚲', label: 'Biking',  mph: [9, 13]    },
-  drive:   { icon: '🚗', label: 'Driving', mph: [22, 38]   },
-  transit: { icon: '🚌', label: 'Transit', mph: [14, 22]   }
+  walk:    { icon: '🚶', label: 'Walking',  mph: [2.6, 3.6] },
+  bike:    { icon: '🚲', label: 'Biking',   mph: [9, 13]    },
+  drive:   { icon: '🚐', label: 'Van Ride', mph: [55, 70]   },
+  transit: { icon: '🚌', label: 'Transit',  mph: [14, 22]   }
 };
 
 const DEMO_MEMBERS: Array<{ name: string; color: string }> = [
@@ -172,7 +172,7 @@ export default function SimulationLabsPage() {
       : m
     );
     const avatar = (user?.avatar) || defaultAvatar;
-    const modes: Mode[] = ['drive', 'walk', 'bike', 'drive', 'transit'];
+    const modes: Mode[] = ['drive', 'drive', 'drive', 'drive', 'drive'];
     const next: SimMember[] = base.map((b, i) =>
       makeMember(i, b, i === 0 ? avatar : defaultAvatar, modes[i % modes.length], seed)
     );
@@ -312,9 +312,10 @@ export default function SimulationLabsPage() {
           What this is
         </div>
         <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--fg-soft)' }}>
-          Pick a destination. When your squad <strong>commits together</strong>, this lab simulates each member's
-          live trip on the map — modes of travel, ETAs, congestion, and an AI-boosted <em>group sync score</em>
-          so you can see how your run would unfold before you actually leave.
+          Pick a Squadron route. When your squad <strong>commits together</strong>, this lab simulates each member's
+          live trip on the map — van ride ETAs, congestion, and an AI-boosted <em>group sync score</em>
+          so you can see how your run would unfold before the van leaves.
+          Head to <Link to="/rides">Rides</Link> to book the real thing.
         </p>
       </div>
 
@@ -355,7 +356,7 @@ export default function SimulationLabsPage() {
               boxShadow: '0 10px 22px rgba(139, 92, 246, 0.35)'
             }}
           >
-            🚀 Commit squad to {preset.label}
+            🚐 Simulate squad run to {preset.label}
           </button>
         </div>
       )}
@@ -420,7 +421,8 @@ export default function SimulationLabsPage() {
       )}
 
       <p style={{ textAlign: 'center', marginTop: 14, fontSize: 12, color: 'var(--muted)' }}>
-        Simulation is fully on-device. Nothing is uploaded. <Link to="/squads">Back to Squads →</Link>
+        Simulation is fully on-device. Nothing is uploaded.{' '}
+        <Link to="/rides">Book a real ride →</Link>
       </p>
     </div>
   );
