@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './lib/AuthContext';
 import LoginPage from './pages/LoginPage';
+import LandingPage from './pages/LandingPage';
 import MapPage from './pages/MapPage';
 import SquadsPage from './pages/SquadsPage';
 import AvatarPage from './pages/AvatarPage';
@@ -31,7 +32,7 @@ export default function App() {
       <main className="app-main">
         <Routes>
           <Route path="/login" element={user ? <Navigate to="/" replace /> : <LoginPage />} />
-          <Route path="/" element={<Protected><MapPage /></Protected>} />
+          <Route path="/" element={user ? <Protected><MapPage /></Protected> : <LandingPage />} />
           <Route path="/squads" element={<Protected><SquadsPage /></Protected>} />
           <Route path="/places" element={<Protected><VisitedPlacesPage /></Protected>} />
           <Route path="/avatar" element={<Protected><AvatarPage /></Protected>} />
