@@ -270,9 +270,13 @@ export default function LandingPage() {
 
 function APESlide({ onSignIn, signingIn }: { onSignIn: () => void; signingIn: boolean }) {
   return (
-    <div className="landing-slide-inner" style={{ background: '#060d1f', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+    // Use raw absolute fill — NOT landing-slide-inner which has justify-content:flex-end
+    <div style={{
+      position: 'absolute', inset: 0,
+      display: 'flex', flexDirection: 'column',
+      background: '#060d1f', overflow: 'hidden',
+    }}>
       <SquadAPECommercial embedded/>
-      {/* CTA overlay at bottom */}
       <div className="ape-slide-cta-bar">
         <button className="slide-cta-primary" style={{ background: '#f59e0b', color: '#000' }} onClick={onSignIn} disabled={signingIn}>
           🚐 Join Squadron — It's Free
