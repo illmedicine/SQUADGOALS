@@ -217,6 +217,195 @@ label {
   margin-top: 28px; max-width: 320px; font-weight: 600;
 }
 
+/* ─── Login v2 (Squadron rideshare branding) ──────────────── */
+.login-v2 {
+  min-height: 100dvh;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #060d1f;
+}
+.lv2-bg {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, #060d1f 0%, #0d1b3e 30%, #1c0d00 60%, #060d1f 100%);
+  z-index: 0;
+}
+.lv2-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 60% 40% at 20% 20%, rgba(139,92,246,0.18) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 35% at 80% 80%, rgba(14,165,233,0.15) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 30% at 60% 10%, rgba(249,115,22,0.1) 0%, transparent 50%);
+}
+.lv2-inner {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 420px;
+  padding: 40px 24px 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.lv2-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+.lv2-logo {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(139,92,246,0.4);
+}
+.lv2-wordmark {
+  font-size: 22px;
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: -0.3px;
+  line-height: 1;
+}
+.lv2-sub {
+  font-size: 11px;
+  color: rgba(255,255,255,0.5);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  margin-top: 3px;
+}
+.lv2-headline {
+  font-size: clamp(32px, 9vw, 44px);
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: -1px;
+  line-height: 1.1;
+  margin: 0 0 12px;
+}
+.lv2-gradient-text {
+  background: linear-gradient(90deg, #a78bfa, #ec4899, #f97316);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.lv2-tagline {
+  color: rgba(255,255,255,0.6);
+  font-size: 14px;
+  line-height: 1.55;
+  margin: 0 0 24px;
+  max-width: 340px;
+}
+.lv2-routes {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 28px;
+}
+.lv2-route-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  text-align: left;
+  backdrop-filter: blur(6px);
+}
+.lv2-route-chip.charter {
+  background: rgba(139,92,246,0.12);
+  border-color: rgba(139,92,246,0.3);
+}
+.lv2-route-icon { font-size: 20px; flex: 0 0 24px; }
+.lv2-route-info { flex: 1; min-width: 0; }
+.lv2-route-name {
+  font-size: 13px;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1;
+}
+.lv2-route-detail {
+  font-size: 11px;
+  color: rgba(255,255,255,0.45);
+  margin-top: 2px;
+}
+.lv2-route-price {
+  font-size: 15px;
+  font-weight: 900;
+  color: #a78bfa;
+  white-space: nowrap;
+}
+.lv2-auth {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.lv2-google-btn {
+  width: 100%;
+  max-width: 340px;
+  padding: 15px 20px;
+  background: #fff;
+  color: #111;
+  border: none;
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 900;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.4);
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+.lv2-google-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 36px rgba(0,0,0,0.5); }
+.lv2-google-btn:active { transform: scale(0.97); }
+.lv2-demo-box {
+  width: 100%;
+  max-width: 340px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 14px;
+  padding: 16px;
+  text-align: left;
+  color: rgba(255,255,255,0.8);
+  font-size: 13px;
+}
+.lv2-error {
+  color: #fca5a5;
+  font-size: 13px;
+  margin: 0;
+  background: rgba(239,68,68,0.15);
+  border: 1px solid rgba(239,68,68,0.3);
+  border-radius: 10px;
+  padding: 8px 14px;
+}
+.lv2-privacy {
+  font-size: 12px;
+  color: rgba(255,255,255,0.4);
+  margin: 0;
+}
+.lv2-privacy a { color: rgba(255,255,255,0.6); }
+.lv2-features {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 28px;
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.35);
+}
+
 /* Map */
 .map-wrap { position: relative; height: 100%; }
 .map-overlay {

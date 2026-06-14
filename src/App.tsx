@@ -21,7 +21,9 @@ import StorefrontAnnouncements from './components/StorefrontAnnouncements';
 function Protected({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth();
   if (loading) return <div className="center">Loading…</div>;
-  if (!user) return <Navigate to="/login" replace />;
+  // Redirect unauthenticated users to the landing page, not /login,
+  // so they always see the full Squadron commercial feed first.
+  if (!user) return <Navigate to="/" replace />;
   return children;
 }
 
@@ -31,7 +33,8 @@ export default function App() {
     <div className="app-shell">
       <main className="app-main">
         <Routes>
-          <Route path="/login" element={user ? <Navigate to="/" replace /> : <LoginPage />} />
+          {/* /login redirects everyone to / — LandingPage is the sign-in entry point */}
+          <Route path="/login" element={<Navigate to="/" replace />} />
           <Route path="/" element={user ? <Protected><MapPage /></Protected> : <LandingPage />} />
           <Route path="/squads" element={<Protected><SquadsPage /></Protected>} />
           <Route path="/places" element={<Protected><VisitedPlacesPage /></Protected>} />
