@@ -190,7 +190,11 @@ function BookTab({
   onBookingCreated: () => void;
   onNeedCard: () => void;
 }) {
-  const [mode, setMode] = useState<BookMode>('static');
+  // Auto-switch to charter when Venues deep-linked here
+  const hasPrefill = useMemo(() => {
+    try { return !!sessionStorage.getItem('squadren.rides.charter'); } catch { return false; }
+  }, []);
+  const [mode, setMode] = useState<BookMode>(hasPrefill ? 'charter' : 'static');
   const [selectedRoute, setSelectedRoute] = useState<StaticRoute | null>(null);
 
   return (
@@ -488,12 +492,21 @@ function CharterForm({
   onBooked: () => void;
   onNeedCard: () => void;
 }) {
+  // Pre-fill from Venues → "Book a Ride" deep link via sessionStorage
+  const prefill = useMemo(() => {
+    try {
+      const raw = sessionStorage.getItem('squadren.rides.charter');
+      if (raw) { sessionStorage.removeItem('squadren.rides.charter'); return JSON.parse(raw); }
+    } catch {}
+    return null;
+  }, []);
+
   const [pickup, setPickup] = useState('');
-  const [destination, setDestination] = useState('');
-  const [date, setDate] = useState(today());
+  const [destination, setDestination] = useState(prefill?.destination || '');
+  const [date, setDate] = useState(prefill?.date || today());
   const [time, setTime] = useState('10:00');
   const [passengers, setPassengers] = useState(8);
-  const [notes, setNotes] = useState('');
+  const [notes, setNotes] = useState(prefill?.notes || '');
   const [selectedPmId, setSelectedPmId] = useState(defaultPm?.id || '');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);

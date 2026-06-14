@@ -1,11 +1,11 @@
 import { NavLink } from 'react-router-dom';
 
 const links = [
-  { to: '/',            label: 'Map',     ico: '🗺️' },
-  { to: '/squads',      label: 'Squads',  ico: '👥' },
-  { to: '/rides',       label: 'Rides',   ico: '🚐' },
-  { to: '/trips',       label: 'Trips',   ico: '🧭' },
-  { to: '/profile',     label: 'Me',      ico: '🙂' }
+  { to: '/',        label: 'Map',    ico: '🗺️' },
+  { to: '/squads',  label: 'Squads', ico: '👥' },
+  { to: '/venues',  label: 'Venues', ico: '🎟️' },
+  { to: '/rides',   label: 'Rides',  ico: '🚐' },
+  { to: '/profile', label: 'Me',     ico: '🙂' }
 ];
 
 export default function NavBar() {

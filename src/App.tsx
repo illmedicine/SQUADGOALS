@@ -13,6 +13,7 @@ import VisitedPlacesPage from './pages/VisitedPlacesPage';
 import SimulationLabsPage from './pages/SimulationLabsPage';
 import StorefrontPage from './pages/StorefrontPage';
 import RidesPage from './pages/RidesPage';
+import VenuesPage from './pages/VenuesPage';
 import NavBar from './components/NavBar';
 import StorefrontAnnouncements from './components/StorefrontAnnouncements';
 
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="/labs" element={<Protected><SimulationLabsPage /></Protected>} />
           <Route path="/storefront" element={<Protected><StorefrontPage /></Protected>} />
           <Route path="/rides" element={<Protected><RidesPage /></Protected>} />
+          <Route path="/venues" element={<Protected><VenuesPage /></Protected>} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
