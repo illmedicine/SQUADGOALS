@@ -50,6 +50,7 @@ import {
   sendWave, watchInbox, readWaveIds, markWaveRead, dismissWave, waveBack,
   type Wave
 } from '../lib/waves';
+import { simulateFleet, STATIC_ROUTES, type SimVan } from '../lib/rides';
 
 const containerStyle: React.CSSProperties = { width: '100%', height: '100%' };
 const GOOGLE_MAPS_KEY = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string) || '';
@@ -195,6 +196,17 @@ export default function MapPage() {
   const [joinToasts, setJoinToasts] = useState<{ uid: string; displayName: string; at: number; fresh: boolean }[]>([]);
   const knownActiveRef = useRef<Set<string>>(new Set());
   const firstActiveSyncRef = useRef(true);
+
+  // ——— Squadron Fleet ———
+  const [fleetVans, setFleetVans] = useState<SimVan[]>(() => simulateFleet());
+  const [showFleet, setShowFleet] = useState(false);
+  const [selectedVan, setSelectedVan] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!showFleet) return;
+    const id = setInterval(() => setFleetVans(simulateFleet()), 10_000);
+    return () => clearInterval(id);
+  }, [showFleet]);
 
   // ——— Waves (bump-style say-hi gesture) ———
   // Inbox = every wave addressed to me; toasts surface unread ones. Outbox is
@@ -969,6 +981,7 @@ export default function MapPage() {
             <button className={'chip ' + (layer === 'squad' ? 'active' : '')} onClick={() => setLayer('squad')}>👥 Squad</button>
             <button className={'chip ' + (layer === 'mine' ? 'active' : '')} onClick={() => setLayer('mine')}>📍 Mine</button>
             <button className={'chip ' + (heat ? 'active' : '')} onClick={() => setHeat(h => !h)}>🔥 Heat</button>
+            <button className={'chip ' + (showFleet ? 'active' : '')} onClick={() => setShowFleet(f => !f)} title="Toggle Squadron van fleet on the map">🚐 Fleet</button>
             <button
               className="chip"
               disabled={!pos || checkInBusy}
@@ -1530,6 +1543,58 @@ export default function MapPage() {
               />
             );
           })}
+
+          {/* Squadron Fleet — 10 vans with live simulated positions */}
+          {showFleet && STATIC_ROUTES.map(route => (
+            <PolylineF
+              key={'fleet-route-' + route.id}
+              path={route.waypoints}
+              options={{
+                strokeColor: '#0ea5e9',
+                strokeOpacity: 0.35,
+                strokeWeight: 3,
+                geodesic: true,
+                icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 0.6, scale: 2 }, offset: '0', repeat: '18px' }]
+              }}
+            />
+          ))}
+          {showFleet && fleetVans.map(van => (
+            <MarkerF
+              key={van.id}
+              position={{ lat: van.lat, lng: van.lng }}
+              title={`${van.label}${van.routeName ? ' · ' + van.routeName : ''} · ${van.seatsAvailable} seats`}
+              label={{ text: String(van.number), color: '#fff', fontSize: '10px', fontWeight: '800' }}
+              icon={{
+                path: google.maps.SymbolPath.CIRCLE,
+                scale: 13,
+                fillColor: van.status === 'on_route' ? '#0ea5e9' : van.status === 'maintenance' ? '#94a3b8' : '#22c55e',
+                fillOpacity: 1,
+                strokeColor: '#fff',
+                strokeWeight: 2,
+              }}
+              zIndex={800}
+              onClick={() => setSelectedVan(selectedVan === van.id ? null : van.id)}
+            >
+              {selectedVan === van.id && (
+                <InfoWindowF position={{ lat: van.lat, lng: van.lng }} onCloseClick={() => setSelectedVan(null)}>
+                  <div style={{ color: '#111', minWidth: 180 }}>
+                    <div style={{ fontWeight: 800, fontSize: 14 }}>🚐 {van.label}</div>
+                    <div style={{ fontSize: 12, marginTop: 4 }}>
+                      {van.routeName
+                        ? <><strong>Route:</strong> {van.routeName}</>
+                        : <span style={{ color: '#22c55e', fontWeight: 700 }}>Available for booking</span>}
+                    </div>
+                    <div style={{ fontSize: 12, marginTop: 2 }}>
+                      <strong>Seats open:</strong> {van.seatsAvailable}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
+                      {van.lat.toFixed(4)}, {van.lng.toFixed(4)}
+                    </div>
+                  </div>
+                </InfoWindowF>
+              )}
+            </MarkerF>
+          ))}
 
           {/* Population Pulse: live Squadders are surfaced via their actual
               avatar markers below. The standalone green circle overlay was
