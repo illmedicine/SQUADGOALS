@@ -2457,6 +2457,7 @@ label {
 .ape-com--embedded {
   flex: 1;
   min-height: 0;
+  height: 100%;
 }
 
 /* Scene host — full size, key-animated */

@@ -270,7 +270,7 @@ export default function LandingPage() {
 
 function APESlide({ onSignIn, signingIn }: { onSignIn: () => void; signingIn: boolean }) {
   return (
-    <div className="landing-slide-inner" style={{ background: '#060d1f', position: 'relative', overflow: 'hidden' }}>
+    <div className="landing-slide-inner" style={{ background: '#060d1f', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
       <SquadAPECommercial embedded/>
       {/* CTA overlay at bottom */}
       <div className="ape-slide-cta-bar">
