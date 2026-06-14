@@ -7,7 +7,10 @@ import {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY as string;
+const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
+
+// Must be stable module-level const — inline arrays cause useJsApiLoader to reload on every render
+const MAPS_LIBRARIES: ('geometry' | 'places')[] = ['geometry'];
 const BUFFALO_CENTER = { lat: 42.8864, lng: -78.8784 };
 
 const ROUTE_COLORS: Record<string, string> = {
@@ -243,7 +246,7 @@ function FleetLegend() {
 export default function FleetMapPage() {
   const { isLoaded } = useJsApiLoader({
     googleMapsApiKey: GOOGLE_MAPS_KEY,
-    libraries: ['geometry'],
+    libraries: MAPS_LIBRARIES,
   });
 
   const [vans, setVans] = useState<SimVan[]>([]);
