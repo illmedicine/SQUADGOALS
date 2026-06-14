@@ -243,7 +243,8 @@ function FleetLegend() {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export default function FleetMapPage() {
+// Split into inner+outer so hooks aren't conditional but Maps SDK only loads when key present
+function FleetMapInner() {
   const { isLoaded } = useJsApiLoader({
     googleMapsApiKey: GOOGLE_MAPS_KEY,
     libraries: MAPS_LIBRARIES,
@@ -424,4 +425,20 @@ export default function FleetMapPage() {
       {showApe && <ApeModal onClose={() => setShowApe(false)} />}
     </div>
   );
+}
+
+export default function FleetMapPage() {
+  if (!GOOGLE_MAPS_KEY) {
+    return (
+      <div className="fm-shell" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16 }}>
+        <div style={{ fontSize: 48 }}>🚐</div>
+        <div style={{ color: '#f1f5f9', fontSize: 18, fontWeight: 700 }}>Fleet Map</div>
+        <div style={{ color: '#64748b', fontSize: 14, textAlign: 'center', maxWidth: 300 }}>
+          Google Maps API key is not configured.<br/>
+          Add <code style={{ color: '#f59e0b' }}>VITE_GOOGLE_MAPS_API_KEY</code> to GitHub Actions secrets.
+        </div>
+      </div>
+    );
+  }
+  return <FleetMapInner />;
 }

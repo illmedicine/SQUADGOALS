@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/AuthContext';
 import { fetchEvents, fmtEventDate, fmtPrice, CATEGORY_ICONS, type VenueEvent, TM_CONFIGURED } from '../lib/venues';
+import SquadAPECommercial from '../components/SquadAPECommercial';
 
 // ─── Route hero card definitions ─────────────────────────────────────────────
 
@@ -17,6 +18,7 @@ type RouteHero = {
   gradient: string;
   icon: string;
   silhouette: 'nyc' | 'toronto' | 'niagara' | 'darien' | 'jails';
+  heroImage?: string; // free Unsplash hi-res hero, falls back to gradient
 };
 
 const ROUTE_HEROES: RouteHero[] = [
@@ -27,6 +29,8 @@ const ROUTE_HEROES: RouteHero[] = [
     price: '$45', savings: 'vs $180+ Uber XL', icon: '🗽',
     accentColor: '#f59e0b', silhouette: 'nyc',
     gradient: 'linear-gradient(175deg,#060d1f 0%,#0d1b3e 35%,#1c0d00 70%,#060d1f 100%)',
+    // NYC Times Square at night — Unsplash, free to use
+    heroImage: 'https://images.unsplash.com/photo-1534430480872-3498386e7856?auto=format&fit=crop&w=1200&q=80',
   },
   {
     id: 'toronto', title: 'Toronto Night Out', cityLabel: '🇨🇦 Toronto, Ontario',
@@ -35,6 +39,8 @@ const ROUTE_HEROES: RouteHero[] = [
     price: '$45', savings: 'vs $160+ solo', icon: '🇨🇦',
     accentColor: '#ef4444', silhouette: 'toronto',
     gradient: 'linear-gradient(175deg,#1a0000 0%,#3d0000 40%,#1a1a2e 80%,#0d0d1a 100%)',
+    // Toronto CN Tower at night — Unsplash, free to use
+    heroImage: 'https://images.unsplash.com/photo-1517090186835-e348b621c9ca?auto=format&fit=crop&w=1200&q=80',
   },
   {
     id: 'niagara', title: 'Clifton Hill & Niagara Falls', cityLabel: '🌊 Niagara Falls, NY',
@@ -43,6 +49,8 @@ const ROUTE_HEROES: RouteHero[] = [
     price: '$15', savings: 'Cheapest group run in WNY', icon: '🌊',
     accentColor: '#22d3ee', silhouette: 'niagara',
     gradient: 'linear-gradient(175deg,#020617 0%,#0c4a6e 40%,#0369a1 70%,#164e63 100%)',
+    // Niagara Falls illuminated — Unsplash, free to use
+    heroImage: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=1200&q=80',
   },
   {
     id: 'darien', title: 'Darien Lake Day Trip', cityLabel: '🎢 Darien Lake, NY',
@@ -51,6 +59,8 @@ const ROUTE_HEROES: RouteHero[] = [
     price: '$18', savings: 'vs $60+ rideshare', icon: '🎢',
     accentColor: '#a855f7', silhouette: 'darien',
     gradient: 'linear-gradient(175deg,#0f0020 0%,#3b0764 30%,#6d28d9 60%,#92400e 100%)',
+    // Roller coaster / theme park — Unsplash, free to use
+    heroImage: 'https://images.unsplash.com/photo-1575364289537-3df13f26f89a?auto=format&fit=crop&w=1200&q=80',
   },
   {
     id: 'jails', title: 'Regional Jails Run', cityLabel: '🔐 WNY Correctional',
@@ -66,17 +76,17 @@ const ROUTE_HEROES: RouteHero[] = [
 
 type FeedItem =
   | { kind: 'splash' }
+  | { kind: 'ape' }
   | { kind: 'event'; event: VenueEvent }
   | { kind: 'route'; route: RouteHero };
 
 function buildFeed(events: VenueEvent[]): FeedItem[] {
-  const feed: FeedItem[] = [{ kind: 'splash' }];
+  // Splash → APE commercial → events+routes interleaved
+  const feed: FeedItem[] = [{ kind: 'splash' }, { kind: 'ape' }];
   const shuffled = [...events].sort((a, b) => {
-    // Mix buffalo + toronto, keep chronological within each
     if (a.city !== b.city) return a.city === 'buffalo' ? -1 : 1;
     return a.date.localeCompare(b.date);
   });
-  // Interleave: 4 events → 1 route → 4 events → 1 route ...
   let routeIdx = 0;
   shuffled.forEach((event, i) => {
     if (i > 0 && i % 4 === 0 && routeIdx < ROUTE_HEROES.length) {
@@ -84,7 +94,6 @@ function buildFeed(events: VenueEvent[]): FeedItem[] {
     }
     feed.push({ kind: 'event', event });
   });
-  // Append any remaining routes
   while (routeIdx < ROUTE_HEROES.length) {
     feed.push({ kind: 'route', route: ROUTE_HEROES[routeIdx++] });
   }
@@ -218,7 +227,8 @@ export default function LandingPage() {
             className="landing-slide"
             ref={el => { slideRefs.current[i] = el; }}
           >
-            {item.kind === 'splash' && <SplashSlide onSignIn={handleSignIn} signingIn={signingIn} onScroll={() => goTo(1)} />}
+            {item.kind === 'splash' && <SplashSlide onSignIn={handleSignIn} signingIn={signingIn} onScroll={() => goTo(2)} />}
+            {item.kind === 'ape'   && <APESlide onSignIn={handleSignIn} signingIn={signingIn} />}
             {item.kind === 'event' && <EventSlide event={item.event} onSignIn={handleSignIn} signingIn={signingIn} />}
             {item.kind === 'route' && <RouteSlide route={item.route} onSignIn={handleSignIn} signingIn={signingIn} />}
           </div>
@@ -257,6 +267,21 @@ export default function LandingPage() {
 }
 
 // ─── Slide types ──────────────────────────────────────────────────────────────
+
+function APESlide({ onSignIn, signingIn }: { onSignIn: () => void; signingIn: boolean }) {
+  return (
+    <div className="landing-slide-inner" style={{ background: '#060d1f', position: 'relative', overflow: 'hidden' }}>
+      <SquadAPECommercial embedded/>
+      {/* CTA overlay at bottom */}
+      <div className="ape-slide-cta-bar">
+        <button className="slide-cta-primary" style={{ background: '#f59e0b', color: '#000' }} onClick={onSignIn} disabled={signingIn}>
+          🚐 Join Squadron — It's Free
+        </button>
+        <span className="ape-slide-cta-note">⚡ APE calculates your group discount in real time</span>
+      </div>
+    </div>
+  );
+}
 
 function SplashSlide({ onSignIn, signingIn, onScroll }: { onSignIn: () => void; signingIn: boolean; onScroll: () => void }) {
   return (
@@ -374,9 +399,24 @@ function EventSlide({ event, onSignIn, signingIn }: { event: VenueEvent; onSignI
 }
 
 function RouteSlide({ route, onSignIn, signingIn }: { route: RouteHero; onSignIn: () => void; signingIn: boolean }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const showPhoto = route.heroImage && !imgFailed;
+
   return (
-    <div className="landing-slide-inner" style={{ background: route.gradient }}>
-      <div className="slide-scrim route-scrim" />
+    <div className="landing-slide-inner" style={{
+      background: showPhoto
+        ? `url(${route.heroImage}) center/cover no-repeat, ${route.gradient}`
+        : route.gradient,
+    }}>
+      {/* Invisible img tag to detect load failure — falls back to gradient */}
+      {route.heroImage && !imgFailed && (
+        <img src={route.heroImage} alt="" style={{ display: 'none' }}
+          onError={() => setImgFailed(true)}/>
+      )}
+      <div className="slide-scrim route-scrim" style={{ background: showPhoto
+        ? 'linear-gradient(to top, rgba(0,0,0,.92) 0%, rgba(0,0,0,.55) 50%, rgba(0,0,0,.35) 100%)'
+        : undefined }}
+      />
 
       {/* City silhouette art */}
       <CitySilhouette id={route.silhouette} accent={route.accentColor} />
