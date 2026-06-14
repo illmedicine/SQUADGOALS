@@ -1,10 +1,10 @@
 import { NavLink } from 'react-router-dom';
 
 const links = [
-  { to: '/',        label: 'Map',    ico: '🗺️' },
+  { to: '/',        label: 'Fleet',  ico: '🚐' },
   { to: '/squads',  label: 'Squads', ico: '👥' },
   { to: '/venues',  label: 'Venues', ico: '🎟️' },
-  { to: '/rides',   label: 'Rides',  ico: '🚐' },
+  { to: '/rides',   label: 'Rides',  ico: '🎫' },
   { to: '/profile', label: 'Me',     ico: '🙂' }
 ];
 

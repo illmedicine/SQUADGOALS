@@ -409,3 +409,167 @@ export async function getPaymentMethods(uid: string): Promise<PaymentMethod[]> {
 
 export const CHARTER_FLAT_RATE = 350;
 export const CHARTER_NOTE = 'Flat rate per trip · up to 15 passengers · fuel, driver & insurance included';
+
+// ─── APE — Algorithmic Pricing Engine ────────────────────────────────────────
+// Inputs: rider count, distance, time-of-day, demand signal, seats filled.
+// Returns a per-seat price and a human-readable breakdown.
+
+export type ApeResult = {
+  basePrice: number;
+  riderDiscount: number;    // 0-25% — more riders = steeper discount
+  demandSurcharge: number;  // 0-20% — peak hours / venue surge
+  filledDiscount: number;   // 0-15% — van is already mostly full → fill last seats cheap
+  finalPrice: number;
+  savingsVsComp: number;    // vs Uber XL competitor price
+  savingsPct: number;
+  label: string;            // e.g. "Group Rate · 19% off"
+};
+
+export function computeApe(
+  route: StaticRoute,
+  seatsOccupied: number,       // how many seats are already taken on this van
+  requestedSeats: number = 1,
+  now = Date.now()
+): ApeResult {
+  const base = route.pricePerRider;
+  const hour = new Date(now).getHours();
+
+  // Rider-count discount: scales 0 → 25% as van fills up to max
+  const fillRatio = Math.min(seatsOccupied / route.maxPassengers, 1);
+  const riderDiscount = Math.round(fillRatio * 25);
+
+  // Demand surcharge: peaks 8-10 AM and 4-7 PM
+  const isPeak = (hour >= 8 && hour < 10) || (hour >= 16 && hour < 19);
+  const demandSurcharge = isPeak ? 15 : 0;
+
+  // Filled discount: if van is >70% full, drop price to fill remaining seats
+  const filledDiscount = fillRatio >= 0.7 ? 12 : fillRatio >= 0.5 ? 6 : 0;
+
+  const netDiscount = Math.max(0, riderDiscount + filledDiscount - demandSurcharge);
+  const finalPrice = Math.max(base * 0.6, base * (1 - netDiscount / 100));
+  const finalRounded = Math.round(finalPrice);
+
+  const savingsVsComp = route.compPrice - finalRounded;
+  const savingsPct = Math.round((savingsVsComp / route.compPrice) * 100);
+
+  return {
+    basePrice: base,
+    riderDiscount,
+    demandSurcharge,
+    filledDiscount,
+    finalPrice: finalRounded,
+    savingsVsComp,
+    savingsPct,
+    label: netDiscount > 0
+      ? `Group Rate · ${netDiscount}% off`
+      : isPeak ? 'Peak Demand Pricing' : 'Standard Rate',
+  };
+}
+
+// ─── Hitchhiker AI ────────────────────────────────────────────────────────────
+// Finds vans currently en route that can pick up a user at a waypoint they
+// haven't passed yet, heading toward the user's desired destination.
+
+export type HitchhikeMatch = {
+  van: SimVan;
+  route: StaticRoute;
+  pickupWaypointIdx: number;
+  pickupName: string;
+  pickupLat: number;
+  pickupLng: number;
+  minutesToPickup: number;     // estimated minutes until van reaches pickup point
+  pricePerSeat: number;        // APE-computed price
+  ape: ApeResult;
+  isReturn: boolean;           // true if van is on return leg
+};
+
+// Keyword → route id mapping for destination matching
+const DEST_KEYWORDS: { pattern: RegExp; routeId: string }[] = [
+  { pattern: /new\s*york|nyc|manhattan|times\s*sq/i,   routeId: 'nyc-shopping' },
+  { pattern: /toronto|ontario|scotiabank/i,             routeId: 'toronto' },
+  { pattern: /niagara|clifton|falls/i,                  routeId: 'clifton-hill' },
+  { pattern: /darien|six\s*flags|theme\s*park/i,        routeId: 'darien-lake' },
+  { pattern: /jail|prison|correction|alden|erie\s*county/i, routeId: 'regional-jails' },
+];
+
+// Named waypoints for display (parallel to each route's waypoints array)
+const WAYPOINT_NAMES: Record<string, string[]> = {
+  'nyc-shopping':    ['Buffalo Hub', 'Rochester', 'Syracuse', 'Albany', 'Newburgh', 'New York City'],
+  'darien-lake':     ['Buffalo Hub', 'Cheektowaga', 'Lancaster', 'Darien Lake'],
+  'clifton-hill':    ['Buffalo Hub', 'Grand Island', 'Niagara Falls NY', 'Clifton Hill'],
+  'toronto':         ['Buffalo Hub', 'Peace Bridge', 'St. Catharines', 'Hamilton', 'Toronto'],
+  'regional-jails':  ['Buffalo Hub', 'Erie County HC', 'Lancaster', 'Alden Correctional'],
+};
+
+function haversineKm(a: RouteWaypoint, b: RouteWaypoint): number {
+  const R = 6371;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const sin2 = Math.sin(dLat / 2) ** 2 +
+    Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(sin2), Math.sqrt(1 - sin2));
+}
+
+export function findHitchhikeMatches(
+  destination: string,
+  now = Date.now()
+): HitchhikeMatch[] {
+  const matched = DEST_KEYWORDS.filter(k => k.pattern.test(destination)).map(k => k.routeId);
+  if (!matched.length) return [];
+
+  const vans = simulateFleet(now);
+  const results: HitchhikeMatch[] = [];
+
+  for (const van of vans) {
+    if (van.status !== 'on_route' || !van.routeId) continue;
+    if (!matched.includes(van.routeId)) continue;
+    if (van.seatsAvailable <= 0) continue;
+
+    const route = STATIC_ROUTES.find(r => r.id === van.routeId);
+    if (!route) continue;
+
+    const phaseIdx = van.number - 1;
+    const elapsed = (now + VAN_PHASES_EXPORT[phaseIdx] * route.cycleDurationMs) % route.cycleDurationMs;
+    const fraction = elapsed / route.cycleDurationMs;
+    const isReturn = fraction >= 0.5;
+
+    // On outbound leg only (can pick up). Return leg vans are heading home.
+    if (isReturn) continue;
+
+    const waypoints = route.waypoints;
+    const names = WAYPOINT_NAMES[route.id] || [];
+    const vanProgressInSegments = fraction * 2 * (waypoints.length - 1);
+
+    // Find the next waypoint the van hasn't reached yet (skip first = Buffalo)
+    for (let wi = 1; wi < waypoints.length - 1; wi++) {
+      const waypointProgress = wi; // each segment = 1 unit
+      if (waypointProgress <= vanProgressInSegments) continue; // already passed
+
+      // Estimate minutes: assume ~55 mph avg between waypoints
+      const distToPickup = haversineKm({ lat: van.lat, lng: van.lng }, waypoints[wi]);
+      const minutesToPickup = Math.round((distToPickup / 88) * 60); // 88 km/h avg
+
+      const seatsOccupied = route.maxPassengers - van.seatsAvailable;
+      const ape = computeApe(route, seatsOccupied, 1, now);
+
+      results.push({
+        van,
+        route,
+        pickupWaypointIdx: wi,
+        pickupName: names[wi] || `Stop ${wi + 1}`,
+        pickupLat: waypoints[wi].lat,
+        pickupLng: waypoints[wi].lng,
+        minutesToPickup,
+        pricePerSeat: ape.finalPrice,
+        ape,
+        isReturn,
+      });
+      break; // take the first (closest upcoming) pickup point
+    }
+  }
+
+  return results.sort((a, b) => a.minutesToPickup - b.minutesToPickup);
+}
+
+// Export phase offsets so FleetMapPage can use them for ETA math
+export const VAN_PHASES_EXPORT = [0, 0.35, 0.12, 0.68, 0.5, 0.22, 0.81, 0.44, 0.07, 0.62];

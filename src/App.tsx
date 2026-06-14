@@ -2,7 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './lib/AuthContext';
 import LoginPage from './pages/LoginPage';
 import LandingPage from './pages/LandingPage';
-import MapPage from './pages/MapPage';
+import FleetMapPage from './pages/FleetMapPage';
 import SquadsPage from './pages/SquadsPage';
 import AvatarPage from './pages/AvatarPage';
 import BadgesPage from './pages/BadgesPage';
@@ -35,7 +35,7 @@ export default function App() {
         <Routes>
           {/* /login redirects everyone to / — LandingPage is the sign-in entry point */}
           <Route path="/login" element={<Navigate to="/" replace />} />
-          <Route path="/" element={user ? <Protected><MapPage /></Protected> : <LandingPage />} />
+          <Route path="/" element={user ? <Protected><FleetMapPage /></Protected> : <LandingPage />} />
           <Route path="/squads" element={<Protected><SquadsPage /></Protected>} />
           <Route path="/places" element={<Protected><VisitedPlacesPage /></Protected>} />
           <Route path="/avatar" element={<Protected><AvatarPage /></Protected>} />
