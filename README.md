@@ -107,11 +107,10 @@ In Android Studio:
 
 ### Firestore rules
 
-`firestore.rules` covers the `users`, `drivers` and `bookings` collections.
-It is intentionally **not** referenced from `firebase.json`; deploy it with
-`firebase deploy --only firestore:rules` once you've merged any legacy rules.
-Without it (or without Firebase at all) the app falls back to browser-local
-storage.
+`firestore.rules` covers the `users`, `drivers` and `bookings` collections
+and is referenced from `firebase.json`. Deploy changes with
+`firebase deploy --only firestore:rules`. Without Firebase configured the app
+falls back to browser-local storage.
 
 Without `VITE_GOOGLE_MAPS_API_KEY` the app uses a built-in SVG map of the US.
 

@@ -1,9 +1,6 @@
 rules_version = '2';
 // Firestore rules for the SquadREN freight network.
 // Deploy with:  firebase deploy --only firestore:rules
-// (Not referenced from firebase.json, so a plain hosting deploy leaves the
-// project's current rules untouched. Merge in any legacy collections you still
-// need before deploying.)
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
