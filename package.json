@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Squad REN — find your friends, share your squad, earn proximity badges.",
+  "description": "SquadREN — nationwide shared-space freight network of independent 18-wheeler drivers.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

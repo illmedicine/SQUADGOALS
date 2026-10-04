@@ -1,58 +1,70 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './lib/AuthContext';
-import LoginPage from './pages/LoginPage';
+import { LocationProvider } from './lib/LocationContext';
 import LandingPage from './pages/LandingPage';
-import FleetMapPage from './pages/FleetMapPage';
-import SquadsPage from './pages/SquadsPage';
-import AvatarPage from './pages/AvatarPage';
-import BadgesPage from './pages/BadgesPage';
-import LeaderboardPage from './pages/LeaderboardPage';
-import TripsPage from './pages/TripsPage';
-import ProfilePage from './pages/ProfilePage';
 import PrivacyPage from './pages/PrivacyPage';
-import VisitedPlacesPage from './pages/VisitedPlacesPage';
-import SimulationLabsPage from './pages/SimulationLabsPage';
-import StorefrontPage from './pages/StorefrontPage';
-import RidesPage from './pages/RidesPage';
-import VenuesPage from './pages/VenuesPage';
-import NavBar from './components/NavBar';
-import StorefrontAnnouncements from './components/StorefrontAnnouncements';
-
-function Protected({ children }: { children: JSX.Element }) {
-  const { user, loading } = useAuth();
-  if (loading) return <div className="center">Loading…</div>;
-  // Redirect unauthenticated users to the landing page, not /login,
-  // so they always see the full Squadron commercial feed first.
-  if (!user) return <Navigate to="/" replace />;
-  return children;
-}
+import RolePickerPage from './pages/RolePickerPage';
+import FindTruckPage from './pages/FindTruckPage';
+import ShipmentsPage from './pages/ShipmentsPage';
+import DriverDashboardPage from './pages/DriverDashboardPage';
+import DriverSetupPage from './pages/DriverSetupPage';
+import NetworkPage from './pages/NetworkPage';
+import { AppHeader, LocationGate, MobileTabs } from './components/freight/ui';
 
 export default function App() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+
+  if (loading) return <div className="center fill">Loading…</div>;
+
+  if (!user) {
+    return (
+      <Routes>
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="*" element={<LandingPage />} />
+      </Routes>
+    );
+  }
+
+  if (!user.role) {
+    return (
+      <Routes>
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="*" element={<RolePickerPage />} />
+      </Routes>
+    );
+  }
+
+  const isDriver = user.role === 'driver';
   return (
-    <div className="app-shell">
-      <main className="app-main">
-        <Routes>
-          {/* /login redirects everyone to / — LandingPage is the sign-in entry point */}
-          <Route path="/login" element={<Navigate to="/" replace />} />
-          <Route path="/" element={user ? <Protected><FleetMapPage /></Protected> : <LandingPage />} />
-          <Route path="/squads" element={<Protected><SquadsPage /></Protected>} />
-          <Route path="/places" element={<Protected><VisitedPlacesPage /></Protected>} />
-          <Route path="/avatar" element={<Protected><AvatarPage /></Protected>} />
-          <Route path="/badges" element={<Protected><BadgesPage /></Protected>} />
-          <Route path="/leaderboard" element={<Protected><LeaderboardPage /></Protected>} />
-          <Route path="/trips" element={<Protected><TripsPage /></Protected>} />
-          <Route path="/profile" element={<Protected><ProfilePage /></Protected>} />
-          <Route path="/labs" element={<Protected><SimulationLabsPage /></Protected>} />
-          <Route path="/storefront" element={<Protected><StorefrontPage /></Protected>} />
-          <Route path="/rides" element={<Protected><RidesPage /></Protected>} />
-          <Route path="/venues" element={<Protected><VenuesPage /></Protected>} />
-          <Route path="/privacy" element={<PrivacyPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </main>
-      {user && <NavBar />}
-      {user && <StorefrontAnnouncements />}
-    </div>
+    <LocationProvider active>
+      <Routes>
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="*" element={
+          <LocationGate>
+            <div className="app-shell">
+              <AppHeader />
+              <main className="app-main">
+                <Routes>
+                  {isDriver ? (
+                    <>
+                      <Route path="/" element={<DriverDashboardPage />} />
+                      <Route path="/driver/setup" element={<DriverSetupPage />} />
+                      <Route path="/network" element={<NetworkPage />} />
+                    </>
+                  ) : (
+                    <>
+                      <Route path="/" element={<FindTruckPage />} />
+                      <Route path="/shipments" element={<ShipmentsPage />} />
+                    </>
+                  )}
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </main>
+              <MobileTabs />
+            </div>
+          </LocationGate>
+        } />
+      </Routes>
+    </LocationProvider>
   );
 }

@@ -1,0 +1,35 @@
+rules_version = '2';
+// Firestore rules for the SquadREN freight network.
+// Deploy with:  firebase deploy --only firestore:rules
+// (Not referenced from firebase.json, so a plain hosting deploy leaves the
+// project's current rules untouched. Merge in any legacy collections you still
+// need before deploying.)
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isUser(uid) { return signedIn() && request.auth.uid == uid; }
+
+    // Private account doc: name, email, role.
+    match /users/{uid} {
+      allow read, write: if isUser(uid);
+    }
+
+    // Public driver profiles — every signed-in user can browse the network.
+    match /drivers/{uid} {
+      allow read: if signedIn();
+      allow create, update, delete: if isUser(uid) && request.resource.data.id == uid;
+    }
+
+    // Shipments are visible only to the shipper and the driver on them.
+    match /bookings/{id} {
+      allow read: if signedIn() &&
+        (resource.data.customerId == request.auth.uid || resource.data.driverId == request.auth.uid);
+      allow create: if signedIn() && request.resource.data.customerId == request.auth.uid
+        && request.resource.data.status == 'requested';
+      allow update: if signedIn() &&
+        (resource.data.customerId == request.auth.uid || resource.data.driverId == request.auth.uid)
+        && request.resource.data.customerId == resource.data.customerId
+        && request.resource.data.driverId == resource.data.driverId;
+    }
+  }
+}

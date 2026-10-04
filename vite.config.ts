@@ -18,8 +18,8 @@ export default defineConfig(() => ({
       manifest: {
         name: 'Squad REN',
         short_name: 'SquadREN',
-        description: 'Squad REN by illy robotic instruments — Friend Finder.',
-        theme_color: '#7c3aed',
+        description: 'SquadREN — book space on independent 18-wheelers heading your way.',
+        theme_color: '#0b0f17',
         background_color: '#0b0b14',
         display: 'standalone',
         orientation: 'portrait',

@@ -1,102 +1,41 @@
-# Squad REN
+# SquadREN — Shared-Space Freight
 
-**Reputable Engagement Network.** Squad REN is a play on *squadron* — a tight
-crew moving together — and the REN acronym is the mission: build real
-communities, and a real local economy, around the places people actually go.
+SquadREN is a nationwide freight network where **independent 18-wheeler
+drivers sell the open space on their trailers** and **shippers book that space
+on trucks already heading their way** — like uShip or Shiply, but built around
+live driver itineraries.
 
-**Short version:** Squad REN is the **live-presence social map**. It's what
-*Bump* would be if it grew up — Bump-style "see who's nearby and 👋 say hi"
-discovery, plus **squads** to actually roll with and a **local marketplace**
-baked into every profile.
+## Two experiences, one app
 
-Squad REN is a social-map platform with three audiences in one app:
+**Shippers**
+- Live map of every truck on the network and its itinerary.
+- Lane search (e.g. *NYC → Denver*): lists every driver whose route passes
+  near both points, with pickup and delivery ETAs.
+- Driver profiles show the actual rig (make / model / year / color), trailer,
+  rating, itinerary and a top-down diagram of the open cargo space.
+- Booking wizard: pick an item (car, motorcycle, pallets, sofa…) or enter
+  custom dimensions + weight; the app checks instantly whether it fits and
+  shows it loaded in the trailer, then quotes a price.
+- My Shipments: live tracking with status timeline.
 
-- **Squadders** see who's live around them right now, wave hello with a tap,
-  become regulars at the spots they love, plan trips, drop reviews, and earn
-  prestige for showing up.
-- **Local businesses & venues** target active squads in their area with
-  exclusive deals, early invites, and pop-up promotions — because the most
-  valuable customer is the one who keeps showing up.
-- **Creators, freelancers, and side-hustlers** get a personal Squad REN
-  storefront on their profile to promote their products, services, and
-  squad-only offers to the people physically around them.
+**Drivers**
+- Onboarding wizard: choose tractor make, model, model year and paint from
+  dropdowns (Peterbilt, Kenworth, Freightliner, Volvo, Mack, International,
+  Western Star, Tesla, Nikola, Hino, Sterling — 80+ models) with a rendered
+  side-profile of the truck; optional real truck photo upload.
+- Trailer type + open square footage + available payload, with a visual of
+  what fits (e.g. "×2 cars", "×13 pallets").
+- Trip builder with auto-routing along interstate corridors and HOS-aware ETAs.
+- Dashboard: online/offline toggle, incoming requests with fit check,
+  accept / decline, mark picked up / delivered, earnings.
 
-Think *Bump* meets *Snapchat Map* meets *Yelp* meets a local-business
-marketplace — with squads, trip planning, real-world prestige, and live
-presence on top.
+Both roles sign in with Google and **must enable device location**.
 
-## Why Squad REN vs. Bump
-
-Bump nailed the gesture: a single map of strangers nearby, no friend graph,
-no DMs, just "is anyone around?". Squad REN keeps that gesture (👋 Wave) and
-adds the three things Bump intentionally leaves out:
-
-1. **Squads** — a group identity so you can roll with your crew, not just
-   solo-discover strangers.
-2. **Storefronts** — every profile is a mini marketplace, so when you wave at
-   someone you instantly see what they do, sell, or host.
-3. **Prestige** — showing up at real places compounds into a tier that
-   unlocks perks at local venues. Reputation is built on physical presence,
-   not followers.
-
-Squad REN ships two ways from one codebase:
-
-1. **Web prototype / PWA** — deployed to GitHub Pages for fast iteration on
-   any device.
-2. **Native Android app** — the same web code wrapped with Capacitor; produces
-   an `.aab` for the Play Store.
-
-## The pillars
-
-- 📍 **See who's live around you.** A real-time map of every Squad REN user
-  nearby. Tap any avatar to fly to them, see their storefront, and 👋 wave.
-  No friend request, no DMs — just hello.
-- ☕ **Become a regular.** Check in at the places you frequent — coffee shops,
-  bars, gyms, gas stations. Other regulars see you on the map and a community
-  forms around the spot.
-- 🛍️ **Your personal storefront.** Every profile doubles as a mini storefront.
-  Promote your shop, service, freelance gig, or creator hustle with products,
-  prices, and squad-only offers — discoverable by the squadders around you.
-- 🎁 **Local-business promos for squads.** Venues and businesses can target
-  active squads with exclusive deals, invites, and pop-ups for the regulars
-  who actually walk in the door.
-- 🧭 **Plan trips, track them live.** Build a multi-stop trip in advance,
-  then physically check into each stop from your phone to earn achievements.
-  Squad-mates watch your path draw across the map in real time.
-- ⭐ **Real reviews from real people.** Drop a public pin anywhere. Squad-mates
-  and strangers leave ratings and comments — powered by people who keep
-  coming back, not paid placements.
-- 👥 **Squads built around you.** Create a squad, pin its HQ on the map, pick
-  a tier-gated crest, and tag your interests. Discover other public squads
-  near you or sharing your vibe — request to join, leader approves.
-
-## Feature inventory
-
-- 🔐 Google Sign-In via Firebase Auth (with Demo Mode fallback)
-- 🗺️ Google Maps with live squad positions, public people, public pins, and
-  500 seeded demo squads to make the world feel alive
-- 🛍️ Per-user storefront on the profile page (kind, bio, items, prices,
-  squad-only offer, visibility toggle)
-- 👥 Public / private squads with crests, HQ pins, interest tags, and
-  leader-approved join requests
-- 📍 Real-time presence using the browser Geolocation API
-- 🛤️ Daily path history (last 7 days, opt-in, per-day visibility)
-
-- 🔐 Google Sign-In via Firebase Auth (with Demo Mode fallback)
-- 🗺️ Google Maps with live squad positions, public people, public pins, and
-  500 seeded demo squads to make the world feel alive
-- 🛍️ Per-user storefront on the profile page (kind, bio, items, prices,
-  squad-only offer, visibility toggle)
-- 👥 Public / private squads with crests, HQ pins, interest tags, and
-  leader-approved join requests
-- 📍 Real-time presence using the browser Geolocation API
-- 🛤️ Daily path history (last 7 days, opt-in, per-day visibility)
-- 📅 Google Timeline import (Records.json, Semantic Location History, or new
-  Timeline.json) — bulk pin everywhere you've been
-- 🏆 7-tier prestige system (Rookie → Mythic) that unlocks 24 squad crests
-  and avatar accessories as you and your squad earn XP
-- 🙂 Customizable Toca-style cartoon avatar — doubles as your map marker
-- 📱 PWA + offline shell, ready for Capacitor → Android AAB
+The network is seeded with **50 demo owner-operators** on major interstate
+corridors (`src/lib/freight/seed.ts`). Their positions are simulated from the
+wall clock (11 h driving / 10 h rest cycles, out-and-back runs), so the map is
+always alive and every popular lane has upcoming capacity. Bookings with
+seeded drivers auto-confirm and progress with the clock.
 
 ## Quick start
 
@@ -118,7 +57,7 @@ Open the URL Vite prints. Without env vars the app boots in **Demo Mode**
    - In Firebase Console enable **Authentication → Google** and create a
      **Firestore** database in production mode.
 
-### Suggested Firestore rules (starter)
+Example `.env.local`:
 
 ```
 VITE_GOOGLE_MAPS_API_KEY=AIza...
@@ -166,14 +105,29 @@ In Android Studio:
   reused at build time.
 - Configure signing under **Build → Generate Signed Bundle / APK → AAB**.
 
+### Firestore rules
+
+`firestore.rules` covers the `users`, `drivers` and `bookings` collections.
+It is intentionally **not** referenced from `firebase.json`; deploy it with
+`firebase deploy --only firestore:rules` once you've merged any legacy rules.
+Without it (or without Firebase at all) the app falls back to browser-local
+storage.
+
+Without `VITE_GOOGLE_MAPS_API_KEY` the app uses a built-in SVG map of the US.
+
 ## Project layout
 
 ```
 src/
-  components/      Avatar, NavBar
-  lib/             firebase, auth, data, geo, badges, useLocation
-  pages/           Login, Map, Squads, Avatar, Badges, Profile, VisitedPlaces
-public/            PWA icons + favicon
+  components/freight/  TruckImage, CargoVisualizer, NetworkMap, DriverSheet,
+                       BookingWizard, shared UI (header, location gate)
+  lib/freight/         cities, trucks, cargo (fit + pricing), route (HOS time
+                       model), network (live state + lane matching), routing,
+                       seed (50 drivers), store (Firestore/local persistence)
+  lib/                 firebase, AuthContext (roles), LocationContext, geo
+  pages/               Landing, RolePicker, FindTruck, Shipments,
+                       DriverDashboard, DriverSetup, Network, Privacy
+public/                PWA icons + favicon
 .github/workflows/ GitHub Pages deploy
 capacitor.config.ts
 ```
@@ -183,6 +137,4 @@ capacitor.config.ts
 - Never commit `.env.local` or any API keys.
 - Restrict the Google Maps key by referrer + Android package name.
 - Restrict the Firebase API key in the Google Cloud Console.
-- The starter Firestore rules above require auth on every read/write — adapt
-  them before going to production (e.g., enforce squad membership for
-  presence reads).
+- Review `firestore.rules` before production.

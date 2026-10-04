@@ -6,124 +6,32 @@ import {
   signOut, User, browserPopupRedirectResolver
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { recordSignIn } from './lifetimeStats';
 import { auth, db, googleProvider, firebaseConfigured } from './firebase';
+import type { Role } from './freight/types';
 
 export type AppUser = {
   uid: string;
   displayName: string;
   email: string | null;
   photoURL: string | null;
-  avatar?: AvatarConfig;
-  storefront?: Storefront;
+  role?: Role;
 };
 
-// Personal "storefront" — every user can promote what they offer (a small
-// business, freelance service, side hustle, creator gig, or just the place
-// they hang out). Surfaces on the profile page and is queryable later for
-// squad-targeted promos / discovery. All fields optional; an empty object
-// just means the user hasn't filled it in yet.
-export type StorefrontPerks = {
-  // Awarded when a user redeems an Indeed-recruit promo (e.g. NAILSON10).
-  prestigeBadge?: string;     // e.g. "🌟 Founding Vendor"
-  badgeColor?: string;        // hex, drives the badge ring + sparkle color
-  storefrontGlow?: boolean;   // animated outer glow + corner shine
-  animatedAvatar?: boolean;   // outfit-aura on the user's avatar everywhere
-  exclusiveOutfit?: string;   // human-readable outfit unlock label
-  earnedAt?: number;
-  source?: string;            // which promo code unlocked it
-};
-export type StorefrontItem = {
-  // Identity is optional so the legacy quick-pill shape stays compatible
-  // with the new marketplace shape under a single union-free type.
-  id?: string;
-  name: string;
-  // Price accepts either a number (preferred, sortable) or a string for
-  // back-compat with the original "Profile > My Storefront" inline editor
-  // that stored prices like "$25" or "from $50".
-  price?: number | string;
-  priceText?: string;         // optional display override (e.g. "from $25")
-  stock?: number;
-  description?: string;
-  note?: string;              // legacy alias for `description`
-  imageDataUrl?: string;      // base64 data URL (resized client-side)
-  category?: string;
-  sku?: string;
-};
-export type Storefront = {
-  kind?: 'business' | 'creator' | 'service' | 'venue' | 'personal' | 'none';
-  name?: string;                       // brand / shop name
-  tagline?: string;                    // one-liner
-  category?: string;                   // Coffee, Fitness, Tattoo, Music, etc.
-  bio?: string;                        // longer description
-  website?: string;
-  instagram?: string;
-  serviceArea?: string;                // "Brooklyn + lower Manhattan"
-  offers?: string;                     // promo / discount line aimed at squads
-  // Up to ~6 quick "products / services" pills for at-a-glance browsing.
-  items?: StorefrontItem[];
-  // Whether other squadders can see this storefront. Off by default until
-  // the user explicitly opts in.
-  visibility?: 'private' | 'squad' | 'public';
-  // New marketplace fields.
-  city?: string;
-  state?: string;
-  country?: string;
-  coverImageDataUrl?: string;
-  logoImageDataUrl?: string;
-  hours?: string;
-  phone?: string;
-  email?: string;
-  perks?: StorefrontPerks;
-  promoCodesRedeemed?: string[];
-  // Lifecycle timestamps used by the announcement feed.
-  firstOpenedAt?: number;     // first time visibility flipped off 'private'
-  lastPromoAt?: number;
-  updatedAt?: number;
-};
+// The landing page records which door the visitor walked through ("Ship" or
+// "Drive") before the Google round-trip, so a redirect sign-in still lands
+// them in the right experience.
+const INTENT_KEY = 'squadren.intendedRole';
+const DEMO_KEY = 'squadren.demoUser';
 
-export type AvatarConfig = {
-  skin: string;
-  hair: string;
-  shirt: string;
-  accessory: string;
-  // New optional fields — older saved avatars stay valid.
-  body?: 'masc' | 'fem' | 'neutral';
-  hairStyle?: 'short' | 'long' | 'bun' | 'curly' | 'mohawk' | 'bald' | 'ponytail' | 'buzz';
-  eyes?: string;
-  pants?: string;
-  shoes?: string;
-  background?: string;
-};
-
-const defaultAvatar: AvatarConfig = {
-  skin: '#f1c27d',
-  hair: '#3b2417',
-  shirt: '#7c3aed',
-  accessory: 'none',
-  body: 'neutral',
-  hairStyle: 'short',
-  eyes: '#1a1a1a',
-  pants: '#1e293b',
-  shoes: '#0f172a',
-  background: '#fef3c7'
-};
-export { defaultAvatar };
-
-// Best-effort current geolocation for the sign-in counter. Resolves quickly
-// (or with nothing) so it never blocks auth.
-function currentGeo(): Promise<{ lat?: number; lng?: number }> {
-  return new Promise(resolve => {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) return resolve({});
-    let done = false;
-    const finish = (v: { lat?: number; lng?: number }) => { if (!done) { done = true; resolve(v); } };
-    navigator.geolocation.getCurrentPosition(
-      p => finish({ lat: p.coords.latitude, lng: p.coords.longitude }),
-      () => finish({}),
-      { enableHighAccuracy: false, timeout: 4000, maximumAge: 60_000 }
-    );
-    setTimeout(() => finish({}), 4500);
-  });
+export function rememberIntent(role: Role) {
+  try { localStorage.setItem(INTENT_KEY, role); } catch { /* ignore */ }
+}
+function takeIntent(): Role | undefined {
+  try {
+    const r = localStorage.getItem(INTENT_KEY) as Role | null;
+    localStorage.removeItem(INTENT_KEY);
+    return r === 'driver' || r === 'shipper' ? r : undefined;
+  } catch { return undefined; }
 }
 
 type Ctx = {
@@ -131,11 +39,10 @@ type Ctx = {
   rawUser: User | null;
   loading: boolean;
   error: string | null;
-  signIn: () => Promise<void>;
-  signInDemo: (name: string) => void;
+  signIn: (role?: Role) => Promise<void>;
+  signInDemo: (name: string, role: Role) => void;
   logout: () => Promise<void>;
-  updateAvatar: (a: AvatarConfig) => Promise<void>;
-  updateStorefront: (s: Storefront) => Promise<void>;
+  setRole: (role: Role) => Promise<void>;
 };
 
 const AuthContext = createContext<Ctx>(null as unknown as Ctx);
@@ -146,53 +53,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Demo mode: keep a fake user in localStorage when Firebase isn't configured.
   useEffect(() => {
     if (!firebaseConfigured || !auth) {
-      const cached = localStorage.getItem('squadren.demoUser');
-      if (cached) setUser(JSON.parse(cached));
+      try {
+        const cached = localStorage.getItem(DEMO_KEY);
+        if (cached) setUser(JSON.parse(cached));
+      } catch { /* ignore */ }
       setLoading(false);
       return;
     }
-    // Pick up any pending redirect sign-in result first. Log loudly so we can
-    // diagnose problems on the deployed site where DevTools is the only debug
-    // surface available.
-    console.log('[auth] checking for redirect result on boot…');
-    getRedirectResult(auth)
-      .then(res => {
-        if (res?.user) {
-          console.log('[auth] redirect sign-in succeeded:', res.user.email);
-        } else {
-          console.log('[auth] no pending redirect result');
-        }
-      })
-      .catch(err => {
-        console.error('[auth] getRedirectResult failed:', err);
-        setError(`Redirect sign-in failed: ${err?.code || ''} ${err?.message || err}`);
-      });
+    getRedirectResult(auth).catch(err => {
+      console.error('[auth] getRedirectResult failed:', err);
+      setError(`Redirect sign-in failed: ${err?.code || ''} ${err?.message || err}`);
+    });
     const unsub = onAuthStateChanged(auth, async (u) => {
       setRawUser(u);
       if (!u) { setUser(null); setLoading(false); return; }
       try {
-        const profile = await ensureProfile(u);
-        setUser(profile);
-        // Marketing counter: count this uid the first time we ever see them.
-        // Geo is best-effort — we'll just count the user without a country if
-        // location isn't available yet.
-        const geo = await currentGeo();
-        recordSignIn(u.uid, geo);
+        setUser(await ensureProfile(u));
       } catch (err: any) {
-        // Firestore unreachable (e.g. DB not created yet). Fall back to an
-        // in-memory profile so the app still loads.
         console.warn('ensureProfile failed, using fallback:', err?.message);
-        setError(err?.message || null);
-        setUser({
-          uid: u.uid,
-          displayName: u.displayName || 'Friend',
-          email: u.email,
-          photoURL: u.photoURL,
-          avatar: defaultAvatar
-        });
+        setUser({ uid: u.uid, displayName: u.displayName || 'Friend', email: u.email, photoURL: u.photoURL, role: takeIntent() });
       } finally {
         setLoading(false);
       }
@@ -201,37 +82,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   async function ensureProfile(u: User): Promise<AppUser> {
-    if (!db) return { uid: u.uid, displayName: u.displayName || 'Friend', email: u.email, photoURL: u.photoURL, avatar: defaultAvatar };
+    const base: AppUser = { uid: u.uid, displayName: u.displayName || 'Friend', email: u.email, photoURL: u.photoURL };
+    const intent = takeIntent();
+    if (!db) return { ...base, role: intent };
     const ref = doc(db, 'users', u.uid);
     const snap = await getDoc(ref);
-    if (!snap.exists()) {
-      const profile: AppUser = {
-        uid: u.uid,
-        displayName: u.displayName || 'Friend',
-        email: u.email,
-        photoURL: u.photoURL,
-        avatar: defaultAvatar
-      };
-      await setDoc(ref, { ...profile, createdAt: serverTimestamp() });
-      return profile;
-    }
-    const data = snap.data() as AppUser;
-    return { ...data, avatar: data.avatar || defaultAvatar };
+    const existing = snap.exists() ? (snap.data() as Partial<AppUser>) : {};
+    // An existing role wins — a returning driver who taps "Ship" still lands
+    // on their driver account (they can switch from the account menu).
+    const role = (existing.role as Role | undefined) ?? intent;
+    const profile: AppUser = { ...base, role };
+    await setDoc(ref, {
+      ...profile,
+      role: role ?? null,
+      ...(snap.exists() ? {} : { createdAt: serverTimestamp() }),
+    }, { merge: true });
+    return profile;
   }
 
-  async function signIn() {
+  async function signIn(role?: Role) {
     setError(null);
+    if (role) rememberIntent(role);
     if (!auth) { setError('Firebase not configured — use Demo Mode.'); return; }
-    console.log('[auth] signIn() called. hostname=', window.location.hostname);
-    // Try popup first everywhere. Popup works on GitHub Pages despite the COOP
-    // header — the only side-effect is we can't detect manual popup close.
-    // Fall back to redirect if popup is blocked or throws.
     try {
-      console.log('[auth] attempting signInWithPopup…');
-      const res = await signInWithPopup(auth, googleProvider, browserPopupRedirectResolver);
-      console.log('[auth] popup sign-in succeeded:', res.user.email);
+      await signInWithPopup(auth, googleProvider, browserPopupRedirectResolver);
     } catch (e: any) {
-      console.warn('[auth] popup failed, falling back to redirect:', e?.code, e?.message);
       if (e?.code === 'auth/popup-closed-by-user' || e?.code === 'auth/cancelled-popup-request') {
         setError('Sign-in cancelled.');
         return;
@@ -239,56 +114,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         await signInWithRedirect(auth, googleProvider);
       } catch (err: any) {
-        console.error('[auth] redirect sign-in also failed:', err);
         setError(`${err?.code || ''} ${err?.message || 'Sign-in failed'}`);
       }
     }
   }
 
-  function signInDemo(name: string) {
+  function signInDemo(name: string, role: Role) {
     const demo: AppUser = {
       uid: 'demo-' + Math.random().toString(36).slice(2, 8),
-      displayName: name || 'Demo Squadder',
+      displayName: name.trim() || (role === 'driver' ? 'Demo Driver' : 'Demo Shipper'),
       email: null,
       photoURL: null,
-      avatar: defaultAvatar
+      role,
     };
-    localStorage.setItem('squadren.demoUser', JSON.stringify(demo));
+    try { localStorage.setItem(DEMO_KEY, JSON.stringify(demo)); } catch { /* ignore */ }
     setUser(demo);
-    currentGeo().then(geo => recordSignIn(demo.uid, geo));
   }
 
   async function logout() {
-    localStorage.removeItem('squadren.demoUser');
+    try { localStorage.removeItem(DEMO_KEY); } catch { /* ignore */ }
     if (auth) await signOut(auth);
     setUser(null);
   }
 
-  async function updateAvatar(a: AvatarConfig) {
+  async function setRole(role: Role) {
     if (!user) return;
-    const next = { ...user, avatar: a };
+    const next = { ...user, role };
     setUser(next);
-    if (db && rawUser) await setDoc(doc(db, 'users', rawUser.uid), { avatar: a }, { merge: true });
-    else localStorage.setItem('squadren.demoUser', JSON.stringify(next));
-  }
-
-  // Persist storefront edits the same way as avatar — Firestore when we're
-  // online, localStorage in demo mode. Stamped with `updatedAt` so the
-  // discovery layer can sort by freshness later.
-  async function updateStorefront(s: Storefront) {
-    if (!user) return;
-    const stamped: Storefront = { ...s, updatedAt: Date.now() };
-    const next = { ...user, storefront: stamped };
-    setUser(next);
-    if (db && rawUser) {
-      await setDoc(doc(db, 'users', rawUser.uid), { storefront: stamped }, { merge: true });
-    } else {
-      localStorage.setItem('squadren.demoUser', JSON.stringify(next));
-    }
+    if (db && rawUser) await setDoc(doc(db, 'users', rawUser.uid), { role }, { merge: true }).catch(() => {});
+    else try { localStorage.setItem(DEMO_KEY, JSON.stringify(next)); } catch { /* ignore */ }
   }
 
   const value = useMemo<Ctx>(() => ({
-    user, rawUser, loading, error, signIn, signInDemo, logout, updateAvatar, updateStorefront
+    user, rawUser, loading, error, signIn, signInDemo, logout, setRole
   }), [user, rawUser, loading, error]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
